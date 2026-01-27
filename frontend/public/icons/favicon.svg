@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="#1e40af"/>
+  <g fill="white">
+    <!-- QR pattern -->
+    <rect x="15" y="15" width="25" height="25" rx="3"/>
+    <rect x="60" y="15" width="25" height="25" rx="3"/>
+    <rect x="15" y="60" width="25" height="25" rx="3"/>
+
+    <!-- Inner squares -->
+    <rect x="22" y="22" width="11" height="11" fill="#1e40af" rx="2"/>
+    <rect x="67" y="22" width="11" height="11" fill="#1e40af" rx="2"/>
+    <rect x="22" y="67" width="11" height="11" fill="#1e40af" rx="2"/>
+
+    <!-- Center dots -->
+    <rect x="25" y="25" width="5" height="5" rx="1"/>
+    <rect x="70" y="25" width="5" height="5" rx="1"/>
+    <rect x="25" y="70" width="5" height="5" rx="1"/>
+
+    <!-- Shield icon in bottom right -->
+    <path d="M72.5 55 L85 60 L85 75 Q85 82 72.5 88 Q60 82 60 75 L60 60 Z" fill="#22c55e"/>
+    <path d="M68 70 L72 74 L80 66" stroke="#1e40af" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

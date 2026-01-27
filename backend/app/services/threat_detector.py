@@ -1,0 +1,266 @@
+import re
+import httpx
+from typing import List, Tuple
+from difflib import SequenceMatcher
+from app.core.config import settings
+from app.models.schemas import Flag, Severity, InfoRequirement, InfoRequirementLevel
+
+
+class ThreatDetector:
+    def __init__(self):
+        self.suspicious_tlds = settings.SUSPICIOUS_TLDS
+        self.popular_brands = settings.POPULAR_BRANDS
+
+        # Login/authentication related keywords
+        self.auth_keywords = [
+            "login", "signin", "sign-in", "log-in", "auth",
+            "password", "credential", "verify", "verification",
+            "account", "secure", "security", "confirm",
+            "로그인", "비밀번호", "인증", "본인확인"
+        ]
+
+        # Personal information keywords
+        self.personal_info_keywords = [
+            "ssn", "social-security", "credit-card", "card-number",
+            "bank", "payment", "billing", "주민등록", "카드번호",
+            "계좌", "결제", "휴대폰", "phone"
+        ]
+
+        # Known phishing patterns
+        self.phishing_patterns = [
+            r"secure.*login",
+            r"account.*verify",
+            r"update.*payment",
+            r"confirm.*identity",
+            r"suspended.*account",
+        ]
+
+    def analyze_url_structure(self, url: str, domain_info: dict) -> List[Flag]:
+        """Analyze URL structure for suspicious patterns."""
+        flags = []
+
+        # Check for suspicious TLD
+        if domain_info["tld"] in self.suspicious_tlds:
+            flags.append(Flag(
+                type="suspicious_tld",
+                severity=Severity.WARNING,
+                message=f"의심스러운 도메인 확장자({domain_info['tld']})가 사용되었습니다"
+            ))
+
+        # Check for IP address instead of domain
+        if domain_info["is_ip"]:
+            flags.append(Flag(
+                type="ip_address",
+                severity=Severity.WARNING,
+                message="도메인 대신 IP 주소가 사용되었습니다"
+            ))
+
+        # Check for suspicious port
+        if domain_info["uses_suspicious_port"]:
+            flags.append(Flag(
+                type="suspicious_port",
+                severity=Severity.WARNING,
+                message="비표준 포트가 사용되었습니다"
+            ))
+
+        # Check for long subdomain (potential phishing)
+        domain_parts = domain_info["domain"].split(".")
+        if len(domain_parts) > 3:
+            flags.append(Flag(
+                type="long_subdomain",
+                severity=Severity.WARNING,
+                message="비정상적으로 긴 서브도메인이 감지되었습니다"
+            ))
+
+        # Check for typosquatting
+        typosquat_brand = self._detect_typosquatting(domain_info["domain"])
+        if typosquat_brand:
+            flags.append(Flag(
+                type="typosquatting",
+                severity=Severity.DANGER,
+                message=f"'{typosquat_brand}' 브랜드를 사칭하는 것으로 의심됩니다"
+            ))
+
+        # Check for authentication keywords in URL path
+        path_lower = domain_info["path"].lower()
+        for keyword in self.auth_keywords:
+            if keyword in path_lower:
+                flags.append(Flag(
+                    type="login_path",
+                    severity=Severity.INFO,
+                    message="로그인/인증 관련 페이지로 연결됩니다"
+                ))
+                break
+
+        # Check for phishing patterns in URL
+        url_lower = url.lower()
+        for pattern in self.phishing_patterns:
+            if re.search(pattern, url_lower):
+                flags.append(Flag(
+                    type="phishing_pattern",
+                    severity=Severity.DANGER,
+                    message="피싱 공격에서 자주 사용되는 URL 패턴이 감지되었습니다"
+                ))
+                break
+
+        return flags
+
+    def _detect_typosquatting(self, domain: str) -> str | None:
+        """Detect potential typosquatting of popular brands."""
+        domain_base = domain.split(".")[0].lower()
+
+        for brand in self.popular_brands:
+            # Skip if exact match
+            if domain_base == brand:
+                continue
+
+            # Check similarity
+            similarity = SequenceMatcher(None, domain_base, brand).ratio()
+            if 0.7 <= similarity < 1.0:
+                return brand
+
+            # Check for common typosquatting patterns
+            # Adding/removing letters, substituting similar characters
+            if self._is_typosquat_variant(domain_base, brand):
+                return brand
+
+        return None
+
+    def _is_typosquat_variant(self, domain: str, brand: str) -> bool:
+        """Check if domain is a typosquat variant of brand."""
+        # Common character substitutions
+        substitutions = {
+            'o': '0', '0': 'o',
+            'l': '1', '1': 'l',
+            'i': '1', 'e': '3',
+            's': '5', 'a': '4',
+            'g': '9', 'b': '8'
+        }
+
+        # Check single character difference
+        if abs(len(domain) - len(brand)) <= 1:
+            # Try to match with one character difference
+            if len(domain) == len(brand):
+                diff_count = sum(1 for a, b in zip(domain, brand) if a != b)
+                if diff_count == 1:
+                    return True
+            # Check for added/removed character
+            longer, shorter = (domain, brand) if len(domain) > len(brand) else (brand, domain)
+            if len(longer) == len(shorter) + 1:
+                for i in range(len(longer)):
+                    if longer[:i] + longer[i+1:] == shorter:
+                        return True
+
+        return False
+
+    async def analyze_page_content(self, url: str) -> Tuple[List[Flag], List[str]]:
+        """Analyze page content for information requirements."""
+        flags = []
+        evidence = []
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, follow_redirects=True)
+                if response.status_code == 200:
+                    content = response.text.lower()
+
+                    # Check for login forms
+                    if self._has_login_form(content):
+                        flags.append(Flag(
+                            type="login_form",
+                            severity=Severity.WARNING,
+                            message="로그인 폼이 감지되었습니다"
+                        ))
+                        evidence.extend(["이메일/아이디 입력 필드", "비밀번호 입력 필드"])
+
+                    # Check for personal info requests
+                    personal_info = self._detect_personal_info_fields(content)
+                    if personal_info:
+                        flags.append(Flag(
+                            type="personal_info_request",
+                            severity=Severity.WARNING,
+                            message="개인정보 입력을 요청하는 페이지입니다"
+                        ))
+                        evidence.extend(personal_info)
+
+                    # Check for payment forms
+                    if self._has_payment_form(content):
+                        flags.append(Flag(
+                            type="payment_form",
+                            severity=Severity.WARNING,
+                            message="결제 정보 입력을 요청하는 페이지입니다"
+                        ))
+                        evidence.append("결제/카드 정보 입력 필드")
+        except Exception:
+            # If we can't fetch the page, that's okay - we'll rely on URL analysis
+            pass
+
+        return flags, evidence
+
+    def _has_login_form(self, content: str) -> bool:
+        """Check if page has a login form."""
+        login_indicators = [
+            'type="password"',
+            "type='password'",
+            'input.*password',
+            'name="password"',
+            'id="password"',
+            'placeholder="password"',
+            'placeholder="비밀번호"',
+        ]
+        return any(re.search(pattern, content) for pattern in login_indicators)
+
+    def _detect_personal_info_fields(self, content: str) -> List[str]:
+        """Detect personal information input fields."""
+        detected = []
+
+        patterns = {
+            "주민등록번호 입력 필드": [r'주민.*번호', r'ssn', r'social.*security'],
+            "휴대폰 번호 입력 필드": [r'휴대폰', r'phone.*number', r'mobile'],
+            "주소 입력 필드": [r'우편번호', r'zipcode', r'address'],
+            "생년월일 입력 필드": [r'생년월일', r'birth.*date', r'date.*birth'],
+        }
+
+        for evidence_text, pattern_list in patterns.items():
+            if any(re.search(p, content) for p in pattern_list):
+                detected.append(evidence_text)
+
+        return detected
+
+    def _has_payment_form(self, content: str) -> bool:
+        """Check if page has a payment form."""
+        payment_indicators = [
+            r'card.*number',
+            r'카드.*번호',
+            r'credit.*card',
+            r'cvv',
+            r'cvc',
+            r'expir.*date',
+            r'유효.*기간',
+        ]
+        return any(re.search(pattern, content) for pattern in payment_indicators)
+
+    def determine_info_requirement(
+        self,
+        flags: List[Flag],
+        evidence: List[str]
+    ) -> InfoRequirement:
+        """Determine the information requirement level."""
+        if not flags and not evidence:
+            return InfoRequirement(level=InfoRequirementLevel.LOW, evidence=[])
+
+        # Check for high-risk indicators
+        high_risk_types = {"payment_form", "personal_info_request", "phishing_pattern"}
+        medium_risk_types = {"login_form", "login_path", "typosquatting"}
+
+        flag_types = {f.type for f in flags}
+
+        if flag_types & high_risk_types:
+            return InfoRequirement(level=InfoRequirementLevel.HIGH, evidence=evidence)
+        elif flag_types & medium_risk_types:
+            return InfoRequirement(level=InfoRequirementLevel.MEDIUM, evidence=evidence)
+        else:
+            return InfoRequirement(level=InfoRequirementLevel.LOW, evidence=evidence)
+
+
+threat_detector = ThreatDetector()
