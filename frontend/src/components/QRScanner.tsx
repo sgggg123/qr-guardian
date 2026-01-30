@@ -36,17 +36,19 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         className="hidden"
       />
 
-      {/* Hidden element for file scanning */}
-      <div id="qr-file-reader" style={{ display: 'none' }} />
+      {/* Hidden element for file scanning - must be in DOM but hidden */}
+      <div id="qr-file-reader" className="absolute" style={{ width: 0, height: 0, overflow: 'hidden' }} />
 
-      <div className="relative w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden">
-        {/* Camera container - always in DOM, visibility controlled by opacity */}
+      {/* Main scanner area */}
+      <div className="relative w-full rounded-2xl overflow-hidden bg-slate-800" style={{ aspectRatio: '1/1' }}>
+
+        {/* Camera video container */}
         <div
           id={elementId}
-          className="absolute inset-0 w-full h-full"
           style={{
-            opacity: isScanning ? 1 : 0,
-            pointerEvents: isScanning ? 'auto' : 'none'
+            width: '100%',
+            height: '100%',
+            display: isScanning ? 'block' : 'none',
           }}
         />
 
@@ -94,7 +96,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
 
         {/* Scanning overlay with corner markers */}
         {isScanning && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
             <div className="w-64 h-64 relative">
               <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary-500 rounded-tl-lg" />
               <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary-500 rounded-tr-lg" />
@@ -105,6 +107,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         )}
       </div>
 
+      {/* Error message */}
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
           <div className="flex items-start gap-3">
@@ -126,6 +129,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         </div>
       )}
 
+      {/* Camera permission warning */}
       {hasPermission === false && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
           <p className="text-sm text-yellow-300 mb-2">카메라 권한이 필요합니다</p>
@@ -135,6 +139,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
         </div>
       )}
 
+      {/* Action buttons */}
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={toggleScanning}

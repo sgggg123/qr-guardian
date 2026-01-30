@@ -23,7 +23,8 @@
       "Bash(python3:*)",
       "WebFetch(domain:railway.com)",
       "Bash(git merge:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(grep:*)"
     ]
   }
 }
