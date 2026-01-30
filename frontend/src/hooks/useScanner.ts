@@ -8,6 +8,7 @@ interface UseScannerOptions {
 
 export function useScanner(options: UseScannerOptions = {}) {
   const [isScanning, setIsScanning] = useState(false)
+  const [isProcessingFile, setIsProcessingFile] = useState(false)
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -78,6 +79,42 @@ export function useScanner(options: UseScannerOptions = {}) {
     }
   }, [isScanning, startScanning, stopScanning])
 
+  const scanFile = useCallback(async (file: File) => {
+    setError(null)
+    setIsProcessingFile(true)
+
+    try {
+      // Stop camera scanning if active
+      if (scannerRef.current?.isScanning) {
+        await scannerRef.current.stop()
+        setIsScanning(false)
+      }
+
+      // Create a new scanner instance for file scanning
+      const fileScanner = new Html5Qrcode('qr-file-reader', {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      })
+
+      const decodedText = await fileScanner.scanFile(file, true)
+      options.onScanSuccess?.(decodedText)
+
+      // Clean up
+      fileScanner.clear()
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'QR 코드를 인식할 수 없습니다'
+
+      if (errorMessage.includes('No QR code') || errorMessage.includes('No barcode')) {
+        setError('이미지에서 QR 코드를 찾을 수 없습니다. 다른 이미지를 시도해주세요.')
+      } else {
+        setError(errorMessage)
+      }
+      options.onScanError?.(errorMessage)
+    } finally {
+      setIsProcessingFile(false)
+    }
+  }, [options])
+
   useEffect(() => {
     return () => {
       if (scannerRef.current?.isScanning) {
@@ -88,11 +125,13 @@ export function useScanner(options: UseScannerOptions = {}) {
 
   return {
     isScanning,
+    isProcessingFile,
     hasPermission,
     error,
     startScanning,
     stopScanning,
     toggleScanning,
+    scanFile,
     elementId,
   }
 }

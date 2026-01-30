@@ -164,11 +164,11 @@ class ThreatDetector:
                 if response.status_code == 200:
                     content = response.text.lower()
 
-                    # Check for login forms
+                    # Check for login forms (INFO level - normal for most sites)
                     if self._has_login_form(content):
                         flags.append(Flag(
                             type="login_form",
-                            severity=Severity.WARNING,
+                            severity=Severity.INFO,
                             message="로그인 폼이 감지되었습니다"
                         ))
                         evidence.extend(["이메일/아이디 입력 필드", "비밀번호 입력 필드"])

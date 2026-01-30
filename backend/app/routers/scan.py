@@ -114,12 +114,21 @@ def _calculate_risk_level(flags: list[Flag], is_safe: bool) -> RiskLevel:
     danger_count = sum(1 for f in flags if f.severity == Severity.DANGER)
     warning_count = sum(1 for f in flags if f.severity == Severity.WARNING)
 
-    if danger_count > 0:
+    # High-risk flags that should immediately trigger RED
+    high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat"}
+    has_high_risk = any(f.type in high_risk_types for f in flags)
+
+    if danger_count > 0 or has_high_risk:
         return RiskLevel.RED
-    elif warning_count >= 2:
+    elif warning_count >= 3:
         return RiskLevel.YELLOW
-    elif warning_count == 1:
-        return RiskLevel.YELLOW
+    elif warning_count >= 1:
+        # Only show yellow if there are significant warnings
+        significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "payment_form", "personal_info_request"}
+        has_significant = any(f.type in significant_warnings and f.severity == Severity.WARNING for f in flags)
+        if has_significant:
+            return RiskLevel.YELLOW
+        return RiskLevel.GREEN
     else:
         return RiskLevel.GREEN
 
