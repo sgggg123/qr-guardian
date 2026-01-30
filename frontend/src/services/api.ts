@@ -1,6 +1,10 @@
 import type { ScanResponse } from '../types'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
+// Ensure API_BASE has protocol
+const rawApiUrl = import.meta.env.VITE_API_URL || ''
+const API_BASE = rawApiUrl && !rawApiUrl.startsWith('http')
+  ? `https://${rawApiUrl}`
+  : rawApiUrl
 
 export async function scanUrl(url: string): Promise<ScanResponse> {
   const response = await fetch(`${API_BASE}/api/scan`, {

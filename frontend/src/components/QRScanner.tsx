@@ -41,13 +41,18 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       <div id="qr-file-reader" className="hidden" />
 
       <div className="relative">
+        {/* Camera video container - html5-qrcode will inject video here */}
         <div
           id={elementId}
           className={`w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden ${
-            !isScanning ? 'flex items-center justify-center' : ''
+            isScanning ? 'block' : 'hidden'
           }`}
-        >
-          {!isScanning && !isProcessingFile && (
+          style={{ minHeight: '300px' }}
+        />
+
+        {/* Placeholder when not scanning */}
+        {!isScanning && !isProcessingFile && (
+          <div className="w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center">
             <div className="text-center p-8">
               <div className="w-16 h-16 mx-auto mb-4 bg-slate-700/50 rounded-full flex items-center justify-center">
                 <svg
@@ -74,14 +79,18 @@ export default function QRScanner({ onScan }: QRScannerProps) {
                 카메라를 시작하거나 이미지를 업로드하세요
               </p>
             </div>
-          )}
-          {isProcessingFile && (
+          </div>
+        )}
+
+        {/* Processing file indicator */}
+        {isProcessingFile && (
+          <div className="w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center">
             <div className="text-center p-8">
               <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-slate-400 text-sm">QR 코드 인식 중...</p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {isScanning && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
