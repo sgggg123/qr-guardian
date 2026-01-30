@@ -26,13 +26,41 @@ class ThreatDetector:
             "계좌", "결제", "휴대폰", "phone"
         ]
 
-        # Known phishing patterns
+        # Known phishing patterns (확장)
         self.phishing_patterns = [
+            # 영문 패턴
             r"secure.*login",
             r"account.*verify",
             r"update.*payment",
             r"confirm.*identity",
             r"suspended.*account",
+            r"verify.*account",
+            r"unlock.*account",
+            r"restore.*access",
+            r"security.*alert",
+            r"unusual.*activity",
+            r"verify.*email",
+            r"confirm.*order",
+            r"prize.*winner",
+            r"free.*gift",
+            r"claim.*reward",
+            r"limited.*offer",
+            r"urgent.*action",
+            r"password.*expire",
+            r"account.*blocked",
+            r"verify.*identity",
+            r"bank.*verification",
+            r"card.*suspended",
+            # 한글 패턴
+            r"본인.*인증",
+            r"계정.*확인",
+            r"비밀번호.*변경",
+            r"보안.*경고",
+            r"당첨.*축하",
+            r"무료.*지급",
+            r"긴급.*조치",
+            r"계좌.*정지",
+            r"카드.*중지",
         ]
 
     def analyze_url_structure(self, url: str, domain_info: dict) -> List[Flag]:

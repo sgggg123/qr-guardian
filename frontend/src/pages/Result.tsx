@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useLocation, Navigate, Link } from 'react-router-dom'
 import TrafficLight from '../components/TrafficLight'
 import {
@@ -8,11 +9,13 @@ import {
   DomainAnalysisCard,
   RedirectChainCard,
 } from '../components/ResultCard'
+import { shareResult, generateShareText, copyToClipboard } from '../services/share'
 import type { ScanData } from '../types'
 
 export default function Result() {
   const location = useLocation()
   const scanData = location.state?.scanData as ScanData | undefined
+  const [shareSuccess, setShareSuccess] = useState<string | null>(null)
 
   if (!scanData) {
     return <Navigate to="/" replace />
@@ -31,14 +34,40 @@ export default function Result() {
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(scanData.final_url)
-      alert('URL이 클립보드에 복사되었습니다')
+      setShareSuccess('URL이 복사되었습니다')
+      setTimeout(() => setShareSuccess(null), 2000)
     } catch {
       alert('URL 복사에 실패했습니다')
     }
   }
 
+  const handleShare = async () => {
+    const success = await shareResult(scanData)
+    if (success) {
+      setShareSuccess('결과가 공유되었습니다')
+      setTimeout(() => setShareSuccess(null), 2000)
+    } else {
+      // Fall back to copy
+      const text = generateShareText(scanData)
+      const copied = await copyToClipboard(text)
+      if (copied) {
+        setShareSuccess('결과가 클립보드에 복사되었습니다')
+        setTimeout(() => setShareSuccess(null), 2000)
+      } else {
+        alert('공유에 실패했습니다')
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
+      {/* Success Toast */}
+      {shareSuccess && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-pulse">
+          {shareSuccess}
+        </div>
+      )}
+
       <div className="text-center">
         <h1 className="text-2xl font-bold text-white mb-4">분석 결과</h1>
         <TrafficLight level={scanData.risk_level} size="lg" />
@@ -95,20 +124,37 @@ export default function Result() {
           </button>
         )}
 
-        <button
-          onClick={handleCopyUrl}
-          className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-            />
-          </svg>
-          URL 복사
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleCopyUrl}
+            className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
+            </svg>
+            URL 복사
+          </button>
+
+          <button
+            onClick={handleShare}
+            className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+              />
+            </svg>
+            결과 공유
+          </button>
+        </div>
 
         <Link
           to="/"

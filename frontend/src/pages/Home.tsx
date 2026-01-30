@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QRScanner from '../components/QRScanner'
 import { scanUrl } from '../services/api'
-import type { ScanData } from '../types'
+import { addScanToHistory } from '../services/scanHistory'
+import { notifyRiskLevel } from '../services/notifications'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -27,6 +28,13 @@ export default function Home() {
 
     try {
       const response = await scanUrl(url)
+
+      // Save to history
+      addScanToHistory(response.data)
+
+      // Play notification sound/vibration
+      notifyRiskLevel(response.data.risk_level)
+
       navigate('/result', { state: { scanData: response.data } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'URL 분석에 실패했습니다')
