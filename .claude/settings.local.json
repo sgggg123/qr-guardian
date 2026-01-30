@@ -17,8 +17,13 @@
       "Bash(git branch:*)",
       "Bash(git remote add:*)",
       "Bash(git push:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(python:*)",
+      "Bash(npm run build:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:railway.com)",
+      "Bash(git merge:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
-ㄴㄴ

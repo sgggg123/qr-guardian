@@ -1,10 +1,11 @@
 import type { ScanResponse } from '../types'
 
-// Ensure API_BASE has protocol
-const rawApiUrl = import.meta.env.VITE_API_URL || ''
-const API_BASE = rawApiUrl && !rawApiUrl.startsWith('http')
-  ? `https://${rawApiUrl}`
-  : rawApiUrl
+// Production backend URL (fallback if VITE_API_URL not set)
+const PRODUCTION_API = 'https://qr-guardianbackend-production.up.railway.app'
+
+// Use environment variable if set, otherwise use production URL
+const rawApiUrl = import.meta.env.VITE_API_URL || PRODUCTION_API
+const API_BASE = rawApiUrl.startsWith('http') ? rawApiUrl : `https://${rawApiUrl}`
 
 export async function scanUrl(url: string): Promise<ScanResponse> {
   const response = await fetch(`${API_BASE}/api/scan`, {

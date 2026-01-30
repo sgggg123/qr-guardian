@@ -18,7 +18,6 @@ export default function QRScanner({ onScan }: QRScannerProps) {
     if (file) {
       scanFile(file)
     }
-    // Reset input so the same file can be selected again
     e.target.value = ''
   }
 
@@ -38,21 +37,22 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       />
 
       {/* Hidden element for file scanning */}
-      <div id="qr-file-reader" className="hidden" />
+      <div id="qr-file-reader" style={{ display: 'none' }} />
 
-      <div className="relative">
-        {/* Camera video container - html5-qrcode will inject video here */}
+      <div className="relative w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden">
+        {/* Camera container - always in DOM, visibility controlled by opacity */}
         <div
           id={elementId}
-          className={`w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden ${
-            isScanning ? 'block' : 'hidden'
-          }`}
-          style={{ minHeight: '300px' }}
+          className="absolute inset-0 w-full h-full"
+          style={{
+            opacity: isScanning ? 1 : 0,
+            pointerEvents: isScanning ? 'auto' : 'none'
+          }}
         />
 
         {/* Placeholder when not scanning */}
         {!isScanning && !isProcessingFile && (
-          <div className="w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center p-8">
               <div className="w-16 h-16 mx-auto mb-4 bg-slate-700/50 rounded-full flex items-center justify-center">
                 <svg
@@ -84,7 +84,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
 
         {/* Processing file indicator */}
         {isProcessingFile && (
-          <div className="w-full aspect-square bg-slate-800 rounded-2xl overflow-hidden flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
             <div className="text-center p-8">
               <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-slate-400 text-sm">QR 코드 인식 중...</p>
@@ -92,6 +92,7 @@ export default function QRScanner({ onScan }: QRScannerProps) {
           </div>
         )}
 
+        {/* Scanning overlay with corner markers */}
         {isScanning && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
             <div className="w-64 h-64 relative">
@@ -99,9 +100,6 @@ export default function QRScanner({ onScan }: QRScannerProps) {
               <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary-500 rounded-tr-lg" />
               <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary-500 rounded-bl-lg" />
               <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary-500 rounded-br-lg" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-full h-0.5 bg-primary-500/50 animate-scan-line" />
-              </div>
             </div>
           </div>
         )}
