@@ -1,4 +1,4 @@
-import type { Flag, Severity, InfoRequirement, SafeBrowsingResult } from '../types'
+import type { Flag, Severity, InfoRequirement, SafeBrowsingResult, DomainAnalysis, RedirectHop } from '../types'
 
 interface FlagCardProps {
   flag: Flag
@@ -223,6 +223,184 @@ export function SafeBrowsingCard({ result }: SafeBrowsingCardProps) {
             </p>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+interface DomainAnalysisCardProps {
+  analysis: DomainAnalysis
+}
+
+const trustLevelConfig = {
+  high: { label: '높음', color: 'text-green-400', bg: 'bg-green-500/20' },
+  medium: { label: '보통', color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
+  low: { label: '낮음', color: 'text-orange-400', bg: 'bg-orange-500/20' },
+  unknown: { label: '알 수 없음', color: 'text-slate-400', bg: 'bg-slate-500/20' },
+}
+
+export function DomainAnalysisCard({ analysis }: DomainAnalysisCardProps) {
+  const trustScoreColor =
+    analysis.trust_score >= 80
+      ? 'text-green-400'
+      : analysis.trust_score >= 60
+        ? 'text-yellow-400'
+        : analysis.trust_score >= 40
+          ? 'text-orange-400'
+          : 'text-red-400'
+
+  const trustScoreBg =
+    analysis.trust_score >= 80
+      ? 'bg-green-500'
+      : analysis.trust_score >= 60
+        ? 'bg-yellow-500'
+        : analysis.trust_score >= 40
+          ? 'bg-orange-500'
+          : 'bg-red-500'
+
+  return (
+    <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+      <h3 className="text-sm font-medium text-slate-400 mb-3">도메인 분석</h3>
+
+      {/* Trust Score */}
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-slate-500">신뢰 점수</span>
+          <span className={`text-lg font-bold ${trustScoreColor}`}>
+            {analysis.trust_score}/100
+          </span>
+        </div>
+        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${trustScoreBg} transition-all duration-500`}
+            style={{ width: `${analysis.trust_score}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Domain Info */}
+      <div className="space-y-3 text-sm">
+        <div className="flex justify-between">
+          <span className="text-slate-500">도메인</span>
+          <span className="text-slate-300 font-mono">{analysis.domain}</span>
+        </div>
+
+        {analysis.domain_age_days !== null && (
+          <div className="flex justify-between">
+            <span className="text-slate-500">인증서 발급일</span>
+            <span className={analysis.domain_age_days < 30 ? 'text-orange-400' : 'text-slate-300'}>
+              {analysis.domain_age_days}일 전
+            </span>
+          </div>
+        )}
+
+        {/* SSL Info */}
+        {analysis.ssl_info && (
+          <>
+            <div className="flex justify-between">
+              <span className="text-slate-500">SSL 발급기관</span>
+              <span className="text-slate-300">{analysis.ssl_info.issuer}</span>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500">인증서 신뢰도</span>
+              <span
+                className={`px-2 py-0.5 rounded text-xs ${
+                  trustLevelConfig[analysis.ssl_info.trust_level]?.bg || 'bg-slate-500/20'
+                } ${trustLevelConfig[analysis.ssl_info.trust_level]?.color || 'text-slate-400'}`}
+              >
+                {trustLevelConfig[analysis.ssl_info.trust_level]?.label || '알 수 없음'}
+              </span>
+            </div>
+
+            {analysis.ssl_info.is_expired && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded p-2 text-red-300 text-xs">
+                SSL 인증서가 만료되었습니다
+              </div>
+            )}
+
+            {analysis.ssl_info.days_until_expiry !== null &&
+              analysis.ssl_info.days_until_expiry < 30 &&
+              !analysis.ssl_info.is_expired && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2 text-yellow-300 text-xs">
+                  인증서가 {analysis.ssl_info.days_until_expiry}일 후 만료됩니다
+                </div>
+              )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface RedirectChainCardProps {
+  chain: RedirectHop[]
+}
+
+export function RedirectChainCard({ chain }: RedirectChainCardProps) {
+  if (chain.length <= 1) return null
+
+  return (
+    <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+      <h3 className="text-sm font-medium text-slate-400 mb-3">리다이렉트 경로</h3>
+
+      <div className="space-y-2">
+        {chain.map((hop, index) => (
+          <div key={index} className="flex items-start gap-2">
+            {/* Step indicator */}
+            <div className="flex flex-col items-center">
+              <div
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                  index === 0
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : index === chain.length - 1
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-slate-700 text-slate-400'
+                }`}
+              >
+                {index + 1}
+              </div>
+              {index < chain.length - 1 && (
+                <div className="w-0.5 h-4 bg-slate-700 my-1" />
+              )}
+            </div>
+
+            {/* URL info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-slate-500 mb-0.5">
+                {index === 0 ? '시작' : index === chain.length - 1 ? '최종 목적지' : `리다이렉트 ${index}`}
+                {hop.status_code > 0 && (
+                  <span
+                    className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
+                      hop.status_code >= 200 && hop.status_code < 300
+                        ? 'bg-green-500/20 text-green-400'
+                        : hop.status_code >= 300 && hop.status_code < 400
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-slate-500/20 text-slate-400'
+                    }`}
+                  >
+                    {hop.status_code}
+                  </span>
+                )}
+              </p>
+              <p className="text-sm text-slate-300 font-mono break-all">{hop.domain}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {chain.length > 2 && (
+        <p className="text-xs text-yellow-400 mt-3 flex items-center gap-1">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          여러 번의 리다이렉트가 감지되었습니다
+        </p>
       )}
     </div>
   )

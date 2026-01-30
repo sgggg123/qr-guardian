@@ -4,10 +4,14 @@ AI 기반 위협 탐지와 실시간 보안 분석을 제공하는 PWA QR 코드
 
 ## 주요 기능
 
-- **QR 코드 스캔**: 카메라를 통한 실시간 QR 코드 스캔
+- **QR 코드 스캔**: 카메라를 통한 실시간 QR 코드 스캔 및 이미지 업로드
 - **AI 기반 위협 탐지**: 패턴 기반 피싱 탐지, 타이포스쿼팅 탐지
 - **URL 분석**: 단축 URL 해제, 리다이렉트 추적, 최종 목적지 확인
+- **SSL 인증서 분석**: 인증서 발급기관 신뢰도, 만료일, 도메인 나이 분석
+- **리다이렉트 체인 시각화**: 전체 리다이렉트 경로를 단계별로 표시
+- **신뢰 점수 시스템**: 0-100점 기반의 종합 위험도 평가
 - **보안 데이터베이스 검사**: Google Safe Browsing API 연동 (선택)
+- **대형 사이트 화이트리스트**: google.com, naver.com 등 신뢰할 수 있는 도메인 자동 인식
 - **PWA 지원**: 오프라인 모드, 홈 화면 추가
 
 ## 기술 스택
@@ -122,7 +126,23 @@ QR 코드에서 추출한 URL을 분석합니다.
     "safe_browsing": {
       "is_safe": true,
       "threats": []
-    }
+    },
+    "domain_analysis": {
+      "domain": "example.com",
+      "ssl_info": {
+        "issuer": "Let's Encrypt",
+        "trust_level": "low",
+        "is_expired": false,
+        "days_until_expiry": 45
+      },
+      "domain_age_days": 120,
+      "trust_score": 75,
+      "risk_factors": []
+    },
+    "redirect_chain": [
+      {"url": "https://bit.ly/xxx", "status_code": 0, "domain": "bit.ly"},
+      {"url": "https://example.com/login", "status_code": 301, "domain": "example.com"}
+    ]
   }
 }
 ```
@@ -156,9 +176,29 @@ QR 코드에서 추출한 URL을 분석합니다.
 - 개인정보 입력 필드 탐지
 - 결제 정보 요청 탐지
 
+### SSL 인증서 분석 (차별화 기능)
+- **발급기관 신뢰도 평가**: DigiCert, GlobalSign 등 유료 인증서 vs Let's Encrypt 무료 인증서
+- **만료 상태 검사**: 만료된 인증서, 곧 만료될 인증서 경고
+- **도메인 나이 추정**: 인증서 발급일 기준 도메인 신규성 평가
+
+### 리다이렉트 체인 분석 (차별화 기능)
+- **전체 경로 추적**: 시작점부터 최종 목적지까지 모든 단계 기록
+- **도메인 변경 탐지**: 여러 도메인을 거치는 의심스러운 리다이렉트 감지
+- **HTTP 상태 코드 표시**: 각 단계의 응답 상태 확인
+
+### 신뢰 점수 시스템 (차별화 기능)
+- 0-100점 기반 종합 평가
+- SSL, 도메인 나이, 콘텐츠 등 다중 요소 반영
+- 점수대별 색상 시각화 (녹색/노랑/빨강)
+
 ### 외부 API 연동
 - Google Safe Browsing API (API 키 필요)
 - Mock 모드 지원 (API 키 없이 개발)
+
+### 화이트리스트 시스템
+- 신뢰할 수 있는 대형 사이트 자동 인식
+- google.com, naver.com, kakao.com, youtube.com 등 포함
+- 서브도메인도 자동 인식 (예: mail.google.com)
 
 ## 환경 변수
 

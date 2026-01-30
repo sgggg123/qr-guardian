@@ -18,6 +18,35 @@ export interface SafeBrowsingResult {
   threats: string[]
 }
 
+export interface SSLInfo {
+  issuer: string
+  valid_from: string | null
+  valid_until: string | null
+  trust_level: 'high' | 'medium' | 'low' | 'unknown'
+  is_expired: boolean
+  days_until_expiry: number | null
+}
+
+export interface RiskFactor {
+  type: string
+  message: string
+  severity: 'danger' | 'warning' | 'info'
+}
+
+export interface DomainAnalysis {
+  domain: string
+  ssl_info: SSLInfo | null
+  domain_age_days: number | null
+  trust_score: number
+  risk_factors: RiskFactor[]
+}
+
+export interface RedirectHop {
+  url: string
+  status_code: number
+  domain: string
+}
+
 export interface ScanData {
   original_url: string
   final_url: string
@@ -25,6 +54,8 @@ export interface ScanData {
   flags: Flag[]
   info_requirement: InfoRequirement
   safe_browsing: SafeBrowsingResult
+  domain_analysis?: DomainAnalysis
+  redirect_chain?: RedirectHop[]
 }
 
 export interface ScanResponse {

@@ -2,12 +2,14 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     ScanRequest, ScanResponse, ScanData, Flag, Severity,
-    RiskLevel, SafeBrowsingResult, ErrorResponse
+    RiskLevel, SafeBrowsingResult, ErrorResponse,
+    SSLInfo, DomainAnalysis, RedirectHop
 )
 from app.core.config import settings
 from app.services.url_analyzer import url_analyzer
 from app.services.threat_detector import threat_detector
 from app.services.safe_browsing import safe_browsing_service
+from app.services.domain_analyzer import domain_analyzer
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
@@ -45,14 +47,23 @@ async def scan_url(request: ScanRequest):
                 message="단축 URL이 감지되었습니다. 실제 목적지가 숨겨져 있을 수 있습니다."
             ))
 
-        # Resolve redirects
-        final_url, redirect_count = await url_analyzer.resolve_redirects(url)
+        # Resolve redirects with full chain
+        final_url, redirect_chain, redirect_count = await url_analyzer.resolve_redirects_with_chain(url)
 
         if redirect_count > 3:
             all_flags.append(Flag(
                 type="multiple_redirects",
                 severity=Severity.WARNING,
                 message=f"다중 리다이렉트가 감지되었습니다 ({redirect_count}회)"
+            ))
+
+        # Check for cross-domain redirects (suspicious behavior)
+        domains_in_chain = set(hop["domain"] for hop in redirect_chain)
+        if len(domains_in_chain) > 2:
+            all_flags.append(Flag(
+                type="cross_domain_redirect",
+                severity=Severity.WARNING,
+                message=f"여러 도메인을 거쳐 리다이렉트됩니다 ({len(domains_in_chain)}개 도메인)"
             ))
 
         # Extract domain info
@@ -77,14 +88,57 @@ async def scan_url(request: ScanRequest):
                     message=f"보안 위협 감지: {threat}"
                 ))
 
+        # Domain analysis (SSL, domain age)
+        domain_result = await domain_analyzer.analyze_domain(final_url)
+
+        # Add domain risk factors as flags
+        for factor in domain_result.get("risk_factors", []):
+            severity_map = {"danger": Severity.DANGER, "warning": Severity.WARNING, "info": Severity.INFO}
+            all_flags.append(Flag(
+                type=factor.get("type", "domain_risk"),
+                severity=severity_map.get(factor.get("severity", "info"), Severity.INFO),
+                message=factor.get("message", "")
+            ))
+
         # Determine info requirement level
         info_requirement = threat_detector.determine_info_requirement(all_flags, evidence)
 
-        # Calculate overall risk level
-        risk_level = _calculate_risk_level(all_flags, is_safe, final_url)
+        # Calculate overall risk level (include domain trust score)
+        risk_level = _calculate_risk_level(all_flags, is_safe, final_url, domain_result.get("trust_score", 100))
 
         # Remove duplicate flags
         unique_flags = _deduplicate_flags(all_flags)
+
+        # Build domain analysis response
+        ssl_info_data = None
+        if domain_result.get("ssl_info"):
+            ssl = domain_result["ssl_info"]
+            ssl_info_data = SSLInfo(
+                issuer=ssl.get("issuer", "Unknown"),
+                valid_from=ssl.get("valid_from"),
+                valid_until=ssl.get("valid_until"),
+                trust_level=ssl.get("trust_level", "unknown"),
+                is_expired=ssl.get("is_expired", False),
+                days_until_expiry=ssl.get("days_until_expiry")
+            )
+
+        domain_analysis_data = DomainAnalysis(
+            domain=domain_result.get("domain", ""),
+            ssl_info=ssl_info_data,
+            domain_age_days=domain_result.get("domain_age_days"),
+            trust_score=domain_result.get("trust_score", 100),
+            risk_factors=domain_result.get("risk_factors", [])
+        )
+
+        # Build redirect chain response
+        redirect_chain_data = [
+            RedirectHop(
+                url=hop["url"],
+                status_code=hop["status_code"],
+                domain=hop["domain"]
+            )
+            for hop in redirect_chain
+        ] if redirect_chain else None
 
         return ScanResponse(
             status="success",
@@ -97,7 +151,9 @@ async def scan_url(request: ScanRequest):
                 safe_browsing=SafeBrowsingResult(
                     is_safe=is_safe,
                     threats=threats
-                )
+                ),
+                domain_analysis=domain_analysis_data,
+                redirect_chain=redirect_chain_data
             )
         )
 
@@ -125,8 +181,8 @@ def _is_trusted_domain(url: str) -> bool:
         return False
 
 
-def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str) -> RiskLevel:
-    """Calculate overall risk level based on flags."""
+def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str, trust_score: int = 100) -> RiskLevel:
+    """Calculate overall risk level based on flags and domain trust score."""
     # Trusted domains are always GREEN (unless Safe Browsing flags them)
     if is_safe and _is_trusted_domain(final_url):
         return RiskLevel.GREEN
@@ -138,16 +194,20 @@ def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str) -> R
     warning_count = sum(1 for f in flags if f.severity == Severity.WARNING)
 
     # High-risk flags that should immediately trigger RED
-    high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat"}
+    high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat", "expired_cert"}
     has_high_risk = any(f.type in high_risk_types for f in flags)
+
+    # Very low trust score = RED
+    if trust_score < 30:
+        return RiskLevel.RED
 
     if danger_count > 0 or has_high_risk:
         return RiskLevel.RED
-    elif warning_count >= 3:
+    elif warning_count >= 3 or trust_score < 60:
         return RiskLevel.YELLOW
     elif warning_count >= 1:
         # Only show yellow if there are significant warnings
-        significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "payment_form", "personal_info_request"}
+        significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "payment_form", "personal_info_request", "new_domain", "low_trust_issuer"}
         has_significant = any(f.type in significant_warnings and f.severity == Severity.WARNING for f in flags)
         if has_significant:
             return RiskLevel.YELLOW

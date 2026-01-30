@@ -16,15 +16,22 @@
 **QR Guardian**은 QR 코드의 URL을 스캔하고 보안 위협을 분석하는 PWA(Progressive Web App) 애플리케이션입니다.
 
 ### 주요 기능
-- QR 코드 실시간 스캔 (카메라 사용)
+- QR 코드 실시간 스캔 (카메라 사용) 및 이미지 업로드
 - URL 직접 입력 검사
 - 단축 URL 해제 및 최종 목적지 추적
 - 피싱/악성 URL 패턴 탐지
 - 타이포스쿼팅(유사 도메인) 탐지
+- SSL 인증서 분석 (발급기관 신뢰도, 만료 상태)
+- 도메인 나이 추정 및 신뢰 점수 시스템 (0-100점)
+- 리다이렉트 체인 시각화
 - 위험도 시각화 (신호등 UI: 초록/노랑/빨강)
 
 ### 차별점
 - 단순 블랙리스트가 아닌 **패턴 기반** 위협 탐지
+- **SSL 인증서 분석**: 무료 vs 유료 인증서 구분, 만료 상태 확인
+- **도메인 신뢰 점수**: 여러 요소를 종합한 0-100점 기반 평가
+- **리다이렉트 체인 추적**: 모든 중간 경유지 표시
+- **대형 사이트 화이트리스트**: google.com, naver.com 등 자동 안전 판정
 - **오프라인 지원** (PWA)
 - 모바일/데스크톱 모두 지원
 
@@ -213,7 +220,8 @@ backend/
 │   ├── services/            # 비즈니스 로직
 │   │   ├── url_analyzer.py  # URL 분석 (리다이렉트 추적)
 │   │   ├── threat_detector.py # 위협 탐지 로직
-│   │   └── safe_browsing.py # Google Safe Browsing 연동
+│   │   ├── safe_browsing.py # Google Safe Browsing 연동
+│   │   └── domain_analyzer.py # SSL 인증서/도메인 나이 분석
 │   │
 │   └── models/              # 데이터 모델
 │       └── schemas.py       # Pydantic 스키마 (요청/응답)
@@ -292,6 +300,25 @@ backend/
 - API 키가 있으면 → 실제 API 호출
 - API 키가 없으면 → Mock 데이터로 테스트
   (알려진 테스트용 악성 URL만 탐지)
+```
+
+#### 6. services/domain_analyzer.py (신규)
+```
+역할: SSL 인증서 및 도메인 특성 분석
+
+기능:
+- SSL 인증서 정보 추출 (발급기관, 유효기간)
+- 인증서 발급기관 신뢰도 평가
+  → DigiCert, GlobalSign (높음)
+  → Let's Encrypt (낮음 - 무료, 피싱에 많이 사용)
+- 도메인 나이 추정 (인증서 발급일 기준)
+- 종합 신뢰 점수 계산 (0-100점)
+
+신뢰도 등급:
+- high (90점 이상): DigiCert, GlobalSign, Comodo 등
+- medium (70-89점): Amazon, Google Trust 등
+- low (60-69점): Let's Encrypt 등 무료 인증서
+- unknown (60점 미만): 알 수 없는 발급기관
 ```
 
 ### 설정값 (core/config.py)
@@ -378,7 +405,7 @@ QR 코드에서 추출한 URL을 분석합니다.
       },
       {
         "type": "login_form",
-        "severity": "warning",
+        "severity": "info",
         "message": "로그인 폼이 감지되었습니다"
       }
     ],
@@ -389,7 +416,27 @@ QR 코드에서 추출한 URL을 분석합니다.
     "safe_browsing": {
       "is_safe": true,
       "threats": []
-    }
+    },
+    "domain_analysis": {
+      "domain": "example.com",
+      "ssl_info": {
+        "issuer": "Let's Encrypt",
+        "valid_from": "2024-01-01T00:00:00",
+        "valid_until": "2024-04-01T00:00:00",
+        "trust_level": "low",
+        "is_expired": false,
+        "days_until_expiry": 60
+      },
+      "domain_age_days": 30,
+      "trust_score": 65,
+      "risk_factors": [
+        {"type": "low_trust_issuer", "message": "무료/저신뢰 인증서 발급기관", "severity": "warning"}
+      ]
+    },
+    "redirect_chain": [
+      {"url": "https://bit.ly/example", "status_code": 0, "domain": "bit.ly"},
+      {"url": "https://example.com/login", "status_code": 301, "domain": "example.com"}
+    ]
   }
 }
 ```
@@ -434,6 +481,38 @@ QR 코드에서 추출한 URL을 분석합니다.
 | ip_address | WARNING | IP 주소 사용 |
 | typosquatting | DANGER | 브랜드 사칭 |
 | phishing_pattern | DANGER | 피싱 URL 패턴 |
-| login_form | WARNING | 로그인 폼 존재 |
+| login_form | INFO | 로그인 폼 존재 |
 | payment_form | WARNING | 결제 폼 존재 |
 | safe_browsing_threat | DANGER | 알려진 악성 URL |
+| new_domain | WARNING | 최근 발급된 인증서 (30일 미만) |
+| low_trust_issuer | WARNING | 무료/저신뢰 인증서 발급기관 |
+| expired_cert | DANGER | 만료된 SSL 인증서 |
+| expiring_soon | WARNING | 곧 만료될 인증서 (30일 이내) |
+| cross_domain_redirect | WARNING | 여러 도메인 경유 리다이렉트 |
+| multiple_redirects | WARNING | 다중 리다이렉트 (3회 이상) |
+
+---
+
+## 신뢰 점수 시스템
+
+종합 신뢰 점수는 0-100점으로 계산됩니다.
+
+### 점수 감점 요인
+
+| 요인 | 감점 |
+|------|------|
+| 무료 인증서 (Let's Encrypt) | -15점 |
+| 알 수 없는 인증서 발급기관 | -10점 |
+| 만료된 인증서 | -30점 |
+| 곧 만료될 인증서 (30일 이내) | -10점 |
+| 신규 도메인 (30일 미만) | -20점 |
+| 비교적 새로운 도메인 (90일 미만) | -5점 |
+
+### 점수 기반 위험도
+
+| 점수 범위 | 위험도 |
+|-----------|--------|
+| 80-100 | GREEN |
+| 60-79 | YELLOW |
+| 30-59 | YELLOW |
+| 0-29 | RED |

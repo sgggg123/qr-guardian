@@ -5,6 +5,8 @@ import {
   FlagsList,
   InfoRequirementCard,
   SafeBrowsingCard,
+  DomainAnalysisCard,
+  RedirectChainCard,
 } from '../components/ResultCard'
 import type { ScanData } from '../types'
 
@@ -50,6 +52,14 @@ export default function Result() {
         <InfoRequirementCard info={scanData.info_requirement} />
 
         <SafeBrowsingCard result={scanData.safe_browsing} />
+
+        {scanData.domain_analysis && (
+          <DomainAnalysisCard analysis={scanData.domain_analysis} />
+        )}
+
+        {scanData.redirect_chain && scanData.redirect_chain.length > 1 && (
+          <RedirectChainCard chain={scanData.redirect_chain} />
+        )}
       </div>
 
       <div className="space-y-3 pt-4">

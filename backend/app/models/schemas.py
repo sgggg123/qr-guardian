@@ -41,6 +41,32 @@ class SafeBrowsingResult(BaseModel):
     threats: List[str]
 
 
+class SSLInfo(BaseModel):
+    """SSL certificate information."""
+    issuer: str
+    valid_from: Optional[str] = None
+    valid_until: Optional[str] = None
+    trust_level: str  # high, medium, low, unknown
+    is_expired: bool
+    days_until_expiry: Optional[int] = None
+
+
+class DomainAnalysis(BaseModel):
+    """Domain analysis results."""
+    domain: str
+    ssl_info: Optional[SSLInfo] = None
+    domain_age_days: Optional[int] = None
+    trust_score: int  # 0-100
+    risk_factors: List[dict]
+
+
+class RedirectHop(BaseModel):
+    """A single hop in the redirect chain."""
+    url: str
+    status_code: int
+    domain: str
+
+
 class ScanData(BaseModel):
     original_url: str
     final_url: str
@@ -48,6 +74,8 @@ class ScanData(BaseModel):
     flags: List[Flag]
     info_requirement: InfoRequirement
     safe_browsing: SafeBrowsingResult
+    domain_analysis: Optional[DomainAnalysis] = None
+    redirect_chain: Optional[List[RedirectHop]] = None
 
 
 class ScanResponse(BaseModel):

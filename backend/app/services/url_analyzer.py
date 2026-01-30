@@ -1,7 +1,22 @@
 import httpx
 from urllib.parse import urlparse
-from typing import Tuple, Optional
+from typing import Tuple, List
 from app.core.config import settings
+
+
+class RedirectHop:
+    """Represents a single hop in the redirect chain."""
+    def __init__(self, url: str, status_code: int, domain: str):
+        self.url = url
+        self.status_code = status_code
+        self.domain = domain
+
+    def to_dict(self) -> dict:
+        return {
+            "url": self.url,
+            "status_code": self.status_code,
+            "domain": self.domain
+        }
 
 
 class URLAnalyzer:
@@ -21,8 +36,22 @@ class URLAnalyzer:
 
     async def resolve_redirects(self, url: str) -> Tuple[str, int]:
         """Follow redirects and return final URL with redirect count."""
+        final_url, _, redirect_count = await self.resolve_redirects_with_chain(url)
+        return final_url, redirect_count
+
+    async def resolve_redirects_with_chain(self, url: str) -> Tuple[str, List[dict], int]:
+        """Follow redirects and return final URL, full chain, and redirect count."""
         final_url = url
+        redirect_chain: List[dict] = []
         redirect_count = 0
+
+        # Add initial URL to chain
+        initial_domain = urlparse(url).netloc.lower()
+        redirect_chain.append({
+            "url": url,
+            "status_code": 0,  # Initial request
+            "domain": initial_domain
+        })
 
         try:
             async with httpx.AsyncClient(
@@ -43,20 +72,32 @@ class URLAnalyzer:
                                 if location.startswith("/"):
                                     parsed = urlparse(current_url)
                                     location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
                                 current_url = location
                                 redirect_count += 1
                                 final_url = current_url
+
+                                # Add to chain
+                                domain = urlparse(current_url).netloc.lower()
+                                redirect_chain.append({
+                                    "url": current_url,
+                                    "status_code": response.status_code,
+                                    "domain": domain
+                                })
                             else:
                                 break
                         else:
                             final_url = current_url
+                            # Update last entry with final status
+                            if redirect_chain:
+                                redirect_chain[-1]["status_code"] = response.status_code
                             break
                     except httpx.RequestError:
                         break
         except Exception:
             pass
 
-        return final_url, redirect_count
+        return final_url, redirect_chain, redirect_count
 
     def extract_domain_info(self, url: str) -> dict:
         """Extract domain information from URL."""
