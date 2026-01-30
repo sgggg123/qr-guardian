@@ -38,6 +38,18 @@ class Settings(BaseSettings):
         "naver", "kakao", "samsung", "toss", "coupang"
     ]
 
+    # Trusted domains (whitelist) - always GREEN
+    TRUSTED_DOMAINS: List[str] = [
+        "google.com", "google.co.kr", "naver.com", "kakao.com", "daum.net",
+        "youtube.com", "facebook.com", "instagram.com", "twitter.com", "x.com",
+        "amazon.com", "apple.com", "microsoft.com", "github.com", "gitlab.com",
+        "netflix.com", "coupang.com", "toss.im", "samsung.com", "lg.com",
+        "wikipedia.org", "stackoverflow.com", "reddit.com", "linkedin.com",
+        "whatsapp.com", "telegram.org", "discord.com", "slack.com",
+        "dropbox.com", "drive.google.com", "outlook.com", "gmail.com",
+        "paypal.com", "stripe.com", "11st.co.kr", "gmarket.co.kr", "auction.co.kr"
+    ]
+
     class Config:
         env_file = ".env"
         extra = "ignore"

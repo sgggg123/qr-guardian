@@ -1,8 +1,10 @@
+from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import (
     ScanRequest, ScanResponse, ScanData, Flag, Severity,
     RiskLevel, SafeBrowsingResult, ErrorResponse
 )
+from app.core.config import settings
 from app.services.url_analyzer import url_analyzer
 from app.services.threat_detector import threat_detector
 from app.services.safe_browsing import safe_browsing_service
@@ -79,7 +81,7 @@ async def scan_url(request: ScanRequest):
         info_requirement = threat_detector.determine_info_requirement(all_flags, evidence)
 
         # Calculate overall risk level
-        risk_level = _calculate_risk_level(all_flags, is_safe)
+        risk_level = _calculate_risk_level(all_flags, is_safe, final_url)
 
         # Remove duplicate flags
         unique_flags = _deduplicate_flags(all_flags)
@@ -106,8 +108,29 @@ async def scan_url(request: ScanRequest):
         )
 
 
-def _calculate_risk_level(flags: list[Flag], is_safe: bool) -> RiskLevel:
+def _is_trusted_domain(url: str) -> bool:
+    """Check if URL belongs to a trusted domain."""
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        # Remove www. prefix
+        if domain.startswith("www."):
+            domain = domain[4:]
+        # Check exact match or subdomain match
+        for trusted in settings.TRUSTED_DOMAINS:
+            if domain == trusted or domain.endswith("." + trusted):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str) -> RiskLevel:
     """Calculate overall risk level based on flags."""
+    # Trusted domains are always GREEN (unless Safe Browsing flags them)
+    if is_safe and _is_trusted_domain(final_url):
+        return RiskLevel.GREEN
+
     if not is_safe:
         return RiskLevel.RED
 
