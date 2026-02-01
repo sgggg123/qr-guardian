@@ -1,6 +1,7 @@
 import re
 import httpx
 from typing import List, Tuple
+from urllib.parse import urlparse
 from difflib import SequenceMatcher
 from app.core.config import settings
 from app.models.schemas import Flag, Severity, InfoRequirement, InfoRequirementLevel
@@ -10,6 +11,17 @@ class ThreatDetector:
     def __init__(self):
         self.suspicious_tlds = settings.SUSPICIOUS_TLDS
         self.popular_brands = settings.POPULAR_BRANDS
+        self.trusted_domains = settings.TRUSTED_DOMAINS
+
+    def _is_trusted_domain(self, domain: str) -> bool:
+        """Check if domain is in trusted whitelist."""
+        domain = domain.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        for trusted in self.trusted_domains:
+            if domain == trusted or domain.endswith("." + trusted):
+                return True
+        return False
 
         # Login/authentication related keywords
         self.auth_keywords = [
@@ -66,6 +78,11 @@ class ThreatDetector:
     def analyze_url_structure(self, url: str, domain_info: dict) -> List[Flag]:
         """Analyze URL structure for suspicious patterns."""
         flags = []
+        is_trusted = self._is_trusted_domain(domain_info["domain"])
+
+        # Skip most checks for trusted domains
+        if is_trusted:
+            return flags
 
         # Check for suspicious TLD
         if domain_info["tld"] in self.suspicious_tlds:
@@ -186,6 +203,13 @@ class ThreatDetector:
         flags = []
         evidence = []
 
+        # Check if trusted domain
+        try:
+            parsed = urlparse(url)
+            is_trusted = self._is_trusted_domain(parsed.netloc)
+        except Exception:
+            is_trusted = False
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(url, follow_redirects=True)
@@ -201,22 +225,22 @@ class ThreatDetector:
                         ))
                         evidence.extend(["이메일/아이디 입력 필드", "비밀번호 입력 필드"])
 
-                    # Check for personal info requests
+                    # Check for personal info requests (INFO for trusted, WARNING for others)
                     personal_info = self._detect_personal_info_fields(content)
                     if personal_info:
                         flags.append(Flag(
                             type="personal_info_request",
-                            severity=Severity.WARNING,
-                            message="개인정보 입력을 요청하는 페이지입니다"
+                            severity=Severity.INFO if is_trusted else Severity.WARNING,
+                            message="개인정보 입력 필드가 있습니다" if is_trusted else "개인정보 입력을 요청하는 페이지입니다"
                         ))
                         evidence.extend(personal_info)
 
-                    # Check for payment forms
+                    # Check for payment forms (INFO for trusted, WARNING for others)
                     if self._has_payment_form(content):
                         flags.append(Flag(
                             type="payment_form",
-                            severity=Severity.WARNING,
-                            message="결제 정보 입력을 요청하는 페이지입니다"
+                            severity=Severity.INFO if is_trusted else Severity.WARNING,
+                            message="결제 기능이 있는 페이지입니다" if is_trusted else "결제 정보 입력을 요청하는 페이지입니다"
                         ))
                         evidence.append("결제/카드 정보 입력 필드")
         except Exception:
@@ -257,16 +281,23 @@ class ThreatDetector:
 
     def _has_payment_form(self, content: str) -> bool:
         """Check if page has a payment form."""
+        # More specific patterns to avoid false positives (e.g., twitter:card)
         payment_indicators = [
-            r'card.*number',
-            r'카드.*번호',
-            r'credit.*card',
-            r'cvv',
-            r'cvc',
-            r'expir.*date',
-            r'유효.*기간',
+            r'<input[^>]*card[^>]*number',  # input field with card number
+            r'<input[^>]*카드[^>]*번호',
+            r'name=["\']?card',  # form field named card
+            r'id=["\']?card',
+            r'placeholder=["\']?카드',
+            r'placeholder=["\']?card\s*number',
+            r'credit\s*card\s*number',
+            r'<input[^>]*cvv',
+            r'<input[^>]*cvc',
+            r'name=["\']?cvv',
+            r'name=["\']?cvc',
+            r'카드\s*번호\s*입력',
+            r'유효\s*기간\s*입력',
         ]
-        return any(re.search(pattern, content) for pattern in payment_indicators)
+        return any(re.search(pattern, content, re.IGNORECASE) for pattern in payment_indicators)
 
     def determine_info_requirement(
         self,
@@ -277,15 +308,22 @@ class ThreatDetector:
         if not flags and not evidence:
             return InfoRequirement(level=InfoRequirementLevel.LOW, evidence=[])
 
-        # Check for high-risk indicators
+        # Only consider WARNING or DANGER level flags for risk assessment
+        warning_or_danger_flags = [f for f in flags if f.severity in (Severity.WARNING, Severity.DANGER)]
+
+        if not warning_or_danger_flags:
+            # All flags are INFO level (trusted domain) - LOW risk
+            return InfoRequirement(level=InfoRequirementLevel.LOW, evidence=evidence)
+
+        # Check for high-risk indicators (only if WARNING or DANGER severity)
         high_risk_types = {"payment_form", "personal_info_request", "phishing_pattern"}
         medium_risk_types = {"login_form", "login_path", "typosquatting"}
 
-        flag_types = {f.type for f in flags}
+        warning_danger_types = {f.type for f in warning_or_danger_flags}
 
-        if flag_types & high_risk_types:
+        if warning_danger_types & high_risk_types:
             return InfoRequirement(level=InfoRequirementLevel.HIGH, evidence=evidence)
-        elif flag_types & medium_risk_types:
+        elif warning_danger_types & medium_risk_types:
             return InfoRequirement(level=InfoRequirementLevel.MEDIUM, evidence=evidence)
         else:
             return InfoRequirement(level=InfoRequirementLevel.LOW, evidence=evidence)

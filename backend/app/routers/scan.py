@@ -91,14 +91,16 @@ async def scan_url(request: ScanRequest):
         # Domain analysis (SSL, domain age)
         domain_result = await domain_analyzer.analyze_domain(final_url)
 
-        # Add domain risk factors as flags
-        for factor in domain_result.get("risk_factors", []):
-            severity_map = {"danger": Severity.DANGER, "warning": Severity.WARNING, "info": Severity.INFO}
-            all_flags.append(Flag(
-                type=factor.get("type", "domain_risk"),
-                severity=severity_map.get(factor.get("severity", "info"), Severity.INFO),
-                message=factor.get("message", "")
-            ))
+        # Add domain risk factors as flags (skip for trusted domains)
+        is_trusted = _is_trusted_domain(final_url)
+        if not is_trusted:
+            for factor in domain_result.get("risk_factors", []):
+                severity_map = {"danger": Severity.DANGER, "warning": Severity.WARNING, "info": Severity.INFO}
+                all_flags.append(Flag(
+                    type=factor.get("type", "domain_risk"),
+                    severity=severity_map.get(factor.get("severity", "info"), Severity.INFO),
+                    message=factor.get("message", "")
+                ))
 
         # Determine info requirement level
         info_requirement = threat_detector.determine_info_requirement(all_flags, evidence)
