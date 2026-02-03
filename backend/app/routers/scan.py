@@ -69,9 +69,18 @@ async def scan_url(request: ScanRequest):
         # Extract domain info
         domain_info = url_analyzer.extract_domain_info(final_url)
 
-        # Analyze URL structure
+        # Analyze URL structure for final URL
         structure_flags = threat_detector.analyze_url_structure(final_url, domain_info)
         all_flags.extend(structure_flags)
+
+        # Also check original URL for typosquatting (important for redirects!)
+        if url != final_url:
+            original_domain_info = url_analyzer.extract_domain_info(url)
+            original_flags = threat_detector.analyze_url_structure(url, original_domain_info)
+            # Only add typosquatting flags from original URL
+            for flag in original_flags:
+                if flag.type == "typosquatting" and flag.type not in [f.type for f in all_flags]:
+                    all_flags.append(flag)
 
         # Analyze page content
         content_flags, evidence = await threat_detector.analyze_page_content(final_url)

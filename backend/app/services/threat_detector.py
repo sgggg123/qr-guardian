@@ -13,16 +13,6 @@ class ThreatDetector:
         self.popular_brands = settings.POPULAR_BRANDS
         self.trusted_domains = settings.TRUSTED_DOMAINS
 
-    def _is_trusted_domain(self, domain: str) -> bool:
-        """Check if domain is in trusted whitelist."""
-        domain = domain.lower()
-        if domain.startswith("www."):
-            domain = domain[4:]
-        for trusted in self.trusted_domains:
-            if domain == trusted or domain.endswith("." + trusted):
-                return True
-        return False
-
         # Login/authentication related keywords
         self.auth_keywords = [
             "login", "signin", "sign-in", "log-in", "auth",
@@ -74,6 +64,16 @@ class ThreatDetector:
             r"계좌.*정지",
             r"카드.*중지",
         ]
+
+    def _is_trusted_domain(self, domain: str) -> bool:
+        """Check if domain is in trusted whitelist."""
+        domain = domain.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        for trusted in self.trusted_domains:
+            if domain == trusted or domain.endswith("." + trusted):
+                return True
+        return False
 
     def analyze_url_structure(self, url: str, domain_info: dict) -> List[Flag]:
         """Analyze URL structure for suspicious patterns."""
@@ -173,24 +173,56 @@ class ThreatDetector:
 
     def _is_typosquat_variant(self, domain: str, brand: str) -> bool:
         """Check if domain is a typosquat variant of brand."""
-        # Common character substitutions
-        substitutions = {
-            'o': '0', '0': 'o',
-            'l': '1', '1': 'l',
-            'i': '1', 'e': '3',
-            's': '5', 'a': '4',
-            'g': '9', 'b': '8'
+        # Map fake characters → real characters (one direction only!)
+        # Key = fake/substitution character, Value = real character
+        char_map = {
+            '0': 'o',  # zero → o
+            'ο': 'o',  # Greek omicron → o
+            '1': 'l',  # one → l
+            '|': 'l',  # pipe → l
+            '!': 'i',  # exclamation → i
+            '3': 'e',  # three → e
+            'є': 'e',  # Cyrillic → e
+            '5': 's',  # five → s
+            '$': 's',  # dollar → s
+            '4': 'a',  # four → a
+            '@': 'a',  # at → a
+            'α': 'a',  # Greek alpha → a
+            '9': 'g',  # nine → g
+            '8': 'b',  # eight → b
+            '6': 'b',  # six → b
+            '7': 't',  # seven → t
+            '+': 't',  # plus → t
+            'rn': 'm', # rn → m (looks like m)
+            'vv': 'w', # vv → w
         }
 
-        # Check single character difference
-        if abs(len(domain) - len(brand)) <= 1:
-            # Try to match with one character difference
-            if len(domain) == len(brand):
-                diff_count = sum(1 for a, b in zip(domain, brand) if a != b)
-                if diff_count == 1:
+        # Normalize domain by replacing fake characters with real ones
+        def normalize(text: str) -> str:
+            result = text.lower()
+            # Handle multi-character substitutions first
+            result = result.replace('rn', 'm').replace('vv', 'w')
+            # Then single character substitutions
+            for fake, real in char_map.items():
+                if len(fake) == 1:
+                    result = result.replace(fake, real)
+            return result
+
+        normalized_domain = normalize(domain)
+        normalized_brand = normalize(brand)
+
+        # After normalization, check if they match
+        if normalized_domain == normalized_brand:
+            return True
+
+        # Check single character difference (after normalization)
+        if abs(len(normalized_domain) - len(normalized_brand)) <= 1:
+            if len(normalized_domain) == len(normalized_brand):
+                diff_count = sum(1 for a, b in zip(normalized_domain, normalized_brand) if a != b)
+                if diff_count <= 2:  # Allow up to 2 character differences
                     return True
             # Check for added/removed character
-            longer, shorter = (domain, brand) if len(domain) > len(brand) else (brand, domain)
+            longer, shorter = (normalized_domain, normalized_brand) if len(normalized_domain) > len(normalized_brand) else (normalized_brand, normalized_domain)
             if len(longer) == len(shorter) + 1:
                 for i in range(len(longer)):
                     if longer[:i] + longer[i+1:] == shorter:

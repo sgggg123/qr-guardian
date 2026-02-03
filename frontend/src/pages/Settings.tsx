@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { getNotificationSettings, setNotificationSettings, playRiskSound, vibrateForRisk } from '../services/notifications'
 
 export default function Settings() {
-  const { theme, toggleTheme, isDark } = useTheme()
+  const { toggleTheme, isDark } = useTheme()
   const [notifications, setNotifications] = useState({ sound: true, vibration: true })
 
   useEffect(() => {
