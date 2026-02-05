@@ -1,417 +1,537 @@
-# QR Guardian 시스템 아키텍처 문서
+# QR Guardian - 시스템 전체 설명서
+
+> 최종 업데이트: 2026-02-06
 
 ## 목차
-1. [프로젝트 개요](#프로젝트-개요)
-2. [기술 스택](#기술-스택)
-3. [시스템 구조](#시스템-구조)
-4. [Frontend 상세](#frontend-상세)
-5. [Backend 상세](#backend-상세)
-6. [배포 구조](#배포-구조)
-7. [API 명세](#api-명세)
+
+1. [프로젝트 개요](#1-프로젝트-개요)
+2. [기술 스택](#2-기술-스택)
+3. [시스템 아키텍처](#3-시스템-아키텍처)
+4. [프로젝트 디렉토리 구조](#4-프로젝트-디렉토리-구조)
+5. [Backend 상세](#5-backend-상세)
+6. [Frontend 상세](#6-frontend-상세)
+7. [데이터 흐름 (스캔 파이프라인)](#7-데이터-흐름-스캔-파이프라인)
+8. [API 명세](#8-api-명세)
+9. [위험도 판정 시스템](#9-위험도-판정-시스템)
+10. [자연어 요약 시스템](#10-자연어-요약-시스템)
+11. [신뢰 점수 시스템](#11-신뢰-점수-시스템)
+12. [로컬 개발 환경](#12-로컬-개발-환경)
+13. [배포](#13-배포)
+14. [테스트](#14-테스트)
+15. [협업 가이드](#15-협업-가이드)
 
 ---
 
-## 프로젝트 개요
+## 1. 프로젝트 개요
 
-**QR Guardian**은 QR 코드의 URL을 스캔하고 보안 위협을 분석하는 PWA(Progressive Web App) 애플리케이션입니다.
+**QR Guardian**은 QR 코드에 포함된 URL을 스캔하고, 여러 관점에서 보안 위협을 분석하여 사용자에게 알기 쉬운 결과를 보여주는 **모바일 우선 PWA** 애플리케이션입니다.
 
-### 주요 기능
-- QR 코드 실시간 스캔 (카메라 사용) 및 이미지 업로드
-- URL 직접 입력 검사
-- 단축 URL 해제 및 최종 목적지 추적
-- 피싱/악성 URL 패턴 탐지
-- 타이포스쿼팅(유사 도메인) 탐지
-- SSL 인증서 분석 (발급기관 신뢰도, 만료 상태)
-- 도메인 나이 추정 및 신뢰 점수 시스템 (0-100점)
-- 리다이렉트 체인 시각화
-- 위험도 시각화 (신호등 UI: 초록/노랑/빨강)
+### 핵심 기능
+
+| 기능 | 설명 |
+|------|------|
+| QR 코드 스캔 | 카메라 실시간 스캔 + 이미지 업로드 |
+| URL 직접 입력 | QR 없이도 URL 검사 가능 |
+| 단축 URL 해제 | bit.ly, han.gl 등 단축 URL의 실제 목적지 추적 |
+| 피싱 탐지 | URL 패턴, 페이지 콘텐츠 기반 피싱 탐지 |
+| 타이포스쿼팅 탐지 | naver → navar 같은 유사 도메인 사칭 탐지 |
+| SSL 인증서 분석 | 발급기관 신뢰도, 만료 상태, 인증서 나이 |
+| 리다이렉트 체인 시각화 | 시작 → 경유지 → 최종 목적지 전체 경로 표시 |
+| 신뢰 점수 | 0~100점 종합 점수 |
+| 신호등 UI | GREEN / YELLOW / RED 3단계 위험도 |
+| 자연어 요약 | 분석 결과를 한국어 2~3문장으로 요약 |
+| 스캔 기록 | localStorage 기반 히스토리 + 통계 |
+| QR 코드 생성 | URL → QR 코드 이미지 생성 및 다운로드 |
+| 알림 | 위험도별 효과음 + 진동 |
+| 결과 공유 | Web Share API / 클립보드 복사 |
+| PWA | 홈 화면 추가, 오프라인 지원 |
 
 ### 차별점
+
 - 단순 블랙리스트가 아닌 **패턴 기반** 위협 탐지
-- **SSL 인증서 분석**: 무료 vs 유료 인증서 구분, 만료 상태 확인
-- **도메인 신뢰 점수**: 여러 요소를 종합한 0-100점 기반 평가
-- **리다이렉트 체인 추적**: 모든 중간 경유지 표시
-- **대형 사이트 화이트리스트**: google.com, naver.com 등 자동 안전 판정
-- **오프라인 지원** (PWA)
-- 모바일/데스크톱 모두 지원
+- SSL 인증서 발급기관까지 분석하는 **다층 신뢰도 평가**
+- 화이트리스트 기반 **대형 사이트 자동 안전 판정** (google.com, naver.com 등)
+- 분석 결과를 사람이 읽기 쉬운 **자연어 한 문단으로 요약**
 
 ---
 
-## 기술 스택
+## 2. 기술 스택
 
 ### Frontend
-| 기술 | 버전 | 용도 |
-|------|------|------|
-| React | 18.x | UI 프레임워크 |
-| TypeScript | 5.x | 타입 안정성 |
-| Vite | 5.x | 빌드 도구 (빠른 개발 서버) |
-| TailwindCSS | 3.x | 스타일링 (유틸리티 CSS) |
-| html5-qrcode | 2.x | QR 코드 스캔 라이브러리 |
-| React Router | 6.x | 페이지 라우팅 |
 
-### Backend
-| 기술 | 버전 | 용도 |
-|------|------|------|
-| FastAPI | 0.109.x | Python 웹 프레임워크 |
-| Pydantic | 2.x | 데이터 검증 |
-| httpx | 0.26.x | 비동기 HTTP 클라이언트 |
-| uvicorn | 0.27.x | ASGI 서버 |
-
-### 배포
 | 기술 | 용도 |
 |------|------|
-| Railway | 클라우드 호스팅 |
+| React 18 + TypeScript | UI 프레임워크 |
+| Vite 5 | 빌드 도구 |
+| TailwindCSS 3 | 유틸리티 CSS 스타일링 |
+| React Router 6 | SPA 라우팅 |
+| html5-qrcode | 카메라 QR 코드 스캔 |
+| qrcode.react | QR 코드 이미지 생성 |
+
+### Backend
+
+| 기술 | 용도 |
+|------|------|
+| FastAPI | Python 비동기 웹 프레임워크 |
+| Pydantic v2 | 요청/응답 데이터 검증 |
+| httpx | 비동기 HTTP 클라이언트 (리다이렉트 추적, 콘텐츠 분석) |
+| uvicorn | ASGI 서버 |
+| pytest | 테스트 프레임워크 |
+
+### 배포
+
+| 기술 | 용도 |
+|------|------|
+| Railway | 클라우드 호스팅 (Backend + Frontend 각각 서비스) |
 | Docker | 컨테이너화 |
-| GitHub | 소스 코드 관리 |
+| GitHub | 소스 코드 + main 브랜치 push 시 자동 배포 |
 
 ---
 
-## 시스템 구조
+## 3. 시스템 아키텍처
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         사용자                               │
-│                    (모바일/데스크톱 브라우저)                   │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Frontend (React)                         │
-│                 https://xxx.up.railway.app                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │  QRScanner  │  │    Home     │  │   Result    │         │
-│  │  (카메라)    │  │  (메인페이지) │  │  (결과표시)  │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────┬───────────────────────────────────┘
-                          │ POST /api/scan
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Backend (FastAPI)                        │
-│                 https://xxx.up.railway.app                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │ URL Analyzer│  │   Threat    │  │    Safe     │         │
-│  │ (URL 분석)   │  │  Detector   │  │  Browsing   │         │
-│  │             │  │ (위협 탐지)  │  │  (외부 API)  │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+사용자 (모바일/데스크톱 브라우저)
+         │
+         │  QR 스캔 또는 URL 입력
+         ▼
+┌─────────────────────────────────────────────────────┐
+│                  Frontend (React)                    │
+│                                                     │
+│   Home.tsx ──scanUrl()──→ api.ts ──POST /api/scan─┐ │
+│                                                   │ │
+│   Result.tsx ← scanData (JSON) ← ─────────────── ┘ │
+│     ├─ TrafficLight    (신호등)                      │
+│     ├─ 요약 카드        (summary)                    │
+│     ├─ UrlInfo         (원본/최종 URL)               │
+│     ├─ FlagsList       (위험 요소 목록)               │
+│     ├─ DomainAnalysis  (도메인/SSL 분석)             │
+│     └─ RedirectChain   (리다이렉트 경로)              │
+└──────────────────────────┬──────────────────────────┘
+                           │ POST /api/scan { url }
+                           ▼
+┌─────────────────────────────────────────────────────┐
+│                  Backend (FastAPI)                   │
+│                                                     │
+│  scan.py (라우터 - 오케스트레이터)                      │
+│    │                                                │
+│    ├─ url_analyzer      단축URL 판별, 리다이렉트 추적  │
+│    ├─ threat_detector   URL 구조 분석, 콘텐츠 분석     │
+│    ├─ safe_browsing     Google Safe Browsing API     │
+│    ├─ domain_analyzer   SSL 인증서, 도메인 나이        │
+│    └─ summary_generator 자연어 요약 생성              │
+│                                                     │
+│  config.py (설정)                                    │
+│    ├─ TRUSTED_DOMAINS   신뢰 도메인 화이트리스트       │
+│    ├─ POPULAR_BRANDS    타이포스쿼팅 탐지용 브랜드      │
+│    ├─ SHORTENER_DOMAINS 단축 URL 서비스 목록          │
+│    └─ SUSPICIOUS_TLDS   의심스러운 TLD 목록           │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Frontend 상세
-
-### 디렉토리 구조
+## 4. 프로젝트 디렉토리 구조
 
 ```
-frontend/
-├── src/
-│   ├── components/          # 재사용 가능한 UI 컴포넌트
-│   │   ├── Layout.tsx       # 전체 레이아웃 (헤더, 푸터)
-│   │   ├── QRScanner.tsx    # QR 코드 스캐너
-│   │   ├── TrafficLight.tsx # 신호등 위험도 표시
-│   │   └── ResultCard.tsx   # 결과 카드 컴포넌트들
-│   │
-│   ├── pages/               # 페이지 컴포넌트
-│   │   ├── Home.tsx         # 메인 페이지 (스캔 화면)
-│   │   └── Result.tsx       # 결과 페이지
-│   │
-│   ├── hooks/               # 커스텀 React 훅
-│   │   └── useScanner.ts    # QR 스캐너 로직
-│   │
-│   ├── services/            # 외부 서비스 연동
-│   │   └── api.ts           # Backend API 호출
-│   │
-│   ├── types/               # TypeScript 타입 정의
-│   │   └── index.ts         # 공통 타입
-│   │
-│   ├── App.tsx              # 앱 진입점, 라우팅 설정
-│   ├── main.tsx             # React 렌더링 시작점
-│   └── index.css            # 전역 스타일
+qr/
+├── docs/
+│   └── SYSTEM_ARCHITECTURE.md   ← 이 문서
 │
-├── public/                  # 정적 파일
-│   └── icons/               # PWA 아이콘
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI 앱 진입점, CORS, 라우터 등록
+│   │   ├── core/
+│   │   │   └── config.py        # 환경변수, 화이트리스트, 브랜드 목록 등 설정
+│   │   ├── routers/
+│   │   │   └── scan.py          # POST /api/scan 엔드포인트 (파이프라인 오케스트레이터)
+│   │   ├── services/
+│   │   │   ├── url_analyzer.py      # 단축URL 판별, 리다이렉트 체인 추적
+│   │   │   ├── threat_detector.py   # URL 구조 분석, 타이포스쿼팅, 콘텐츠 분석
+│   │   │   ├── safe_browsing.py     # Google Safe Browsing API 연동
+│   │   │   ├── domain_analyzer.py   # SSL 인증서 분석, 도메인 나이, 신뢰 점수
+│   │   │   └── summary_generator.py # 자연어 요약 생성 (템플릿 기반)
+│   │   └── models/
+│   │       └── schemas.py       # Pydantic 모델 (ScanRequest, ScanData, Flag 등)
+│   ├── tests/
+│   │   └── test_summary_generator.py  # 요약 생성기 regression 테스트
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── railway.json
 │
-├── package.json             # 의존성 및 스크립트
-├── vite.config.ts           # Vite 설정
-├── tailwind.config.js       # TailwindCSS 설정
-└── Dockerfile               # Docker 빌드 설정
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx              # 라우팅 설정 (/, /result, /history, /settings, /generate)
+│   │   ├── main.tsx             # React 렌더링 시작점
+│   │   ├── index.css            # 전역 스타일 (TailwindCSS)
+│   │   ├── components/
+│   │   │   ├── Layout.tsx       # 전체 레이아웃 (헤더 + 하단 네비게이션 바)
+│   │   │   ├── QRScanner.tsx    # 카메라 QR 코드 스캐너 (html5-qrcode)
+│   │   │   ├── TrafficLight.tsx # 신호등 위험도 표시 (GREEN/YELLOW/RED)
+│   │   │   └── ResultCard.tsx   # 결과 카드 컴포넌트 모음 (6개 export)
+│   │   ├── pages/
+│   │   │   ├── Home.tsx         # 메인 페이지 (QR 스캔 + URL 입력)
+│   │   │   ├── Result.tsx       # 분석 결과 페이지 (신호등, 요약, 상세 카드들)
+│   │   │   ├── History.tsx      # 스캔 기록 + 통계
+│   │   │   ├── Settings.tsx     # 테마, 효과음, 진동 설정
+│   │   │   └── Generate.tsx     # QR 코드 생성기
+│   │   ├── services/
+│   │   │   ├── api.ts           # Backend API 호출 (scanUrl, healthCheck)
+│   │   │   ├── scanHistory.ts   # localStorage 기반 스캔 히스토리 관리
+│   │   │   ├── notifications.ts # Web Audio API 효과음 + 진동
+│   │   │   └── share.ts        # 결과 공유 (Web Share API + 클립보드)
+│   │   ├── contexts/
+│   │   │   └── ThemeContext.tsx  # 다크/라이트 테마 Context
+│   │   └── types/
+│   │       └── index.ts         # TypeScript 타입 정의 (ScanData, Flag 등)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── Dockerfile
+│   └── railway.json
+│
+├── README.md                    # 프로젝트 소개 및 빠른 시작
+└── railway.json                 # Railway 모노레포 설정
 ```
 
-### 주요 컴포넌트 설명
+---
 
-#### 1. QRScanner.tsx
+## 5. Backend 상세
+
+### 5.1 `main.py` — 앱 진입점
+
+- FastAPI 인스턴스 생성 (API 문서: `/api/docs`, `/api/redoc`)
+- CORS 미들웨어 등록 (Frontend에서 접근 허용)
+- `scan.router` 등록
+- `GET /health` 헬스체크 엔드포인트
+
+### 5.2 `core/config.py` — 설정
+
+`pydantic_settings` 기반. 환경변수 또는 `.env` 파일에서 읽음.
+
+| 설정 | 설명 |
+|------|------|
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Safe Browsing API 키 (없으면 Mock 모드) |
+| `TRUSTED_DOMAINS` | 자동 안전 판정 도메인 (~90개: google.com, naver.com, go.kr 등) |
+| `POPULAR_BRANDS` | 타이포스쿼팅 탐지 대상 브랜드 (~50개: google, naver, kakao 등) |
+| `SHORTENER_DOMAINS` | 단축 URL 서비스 (~30개: bit.ly, han.gl, vo.la 등) |
+| `SUSPICIOUS_TLDS` | 위험 TLD (~16개: .xyz, .tk, .ml 등) |
+| `MAX_REDIRECTS` | 리다이렉트 최대 추적 횟수 (기본 10) |
+| `REQUEST_TIMEOUT` | HTTP 요청 타임아웃 (기본 10초) |
+
+### 5.3 `routers/scan.py` — 스캔 파이프라인 오케스트레이터
+
+이 파일이 전체 분석 파이프라인을 조율하는 핵심 파일입니다.
+
 ```
-역할: 카메라를 통한 QR 코드 스캔
-사용 라이브러리: html5-qrcode
-
-동작 흐름:
-1. 사용자가 "카메라 시작" 버튼 클릭
-2. 브라우저 카메라 권한 요청
-3. 카메라 스트림을 화면에 표시
-4. QR 코드 인식 시 onScan 콜백 호출
-5. 추출된 URL을 부모 컴포넌트로 전달
+POST /api/scan 요청 수신
+  │
+  ├─ 1. URL 유효성 검사 + https:// 자동 추가
+  ├─ 2. url_analyzer.is_shortened_url()     → 단축URL 플래그
+  ├─ 3. url_analyzer.resolve_redirects_with_chain() → 최종URL + 리다이렉트 체인
+  ├─ 4. threat_detector.analyze_url_structure()     → URL 구조 플래그
+  ├─ 5. threat_detector.analyze_page_content()      → 콘텐츠 플래그
+  ├─ 6. safe_browsing_service.check_url()           → Safe Browsing 플래그
+  ├─ 7. domain_analyzer.analyze_domain()            → SSL/도메인 플래그
+  ├─ 8. _calculate_risk_level()                     → GREEN / YELLOW / RED 판정
+  ├─ 9. _deduplicate_flags()                        → 중복 플래그 제거
+  ├─ 10. generate_summary()                         → 자연어 요약 생성
+  └─ 11. ScanResponse 반환
 ```
 
-#### 2. TrafficLight.tsx
-```
-역할: 위험도를 신호등 형태로 시각화
+주요 내부 함수:
+- `_is_trusted_domain(url)` — 화이트리스트 도메인 체크 (서브도메인 포함)
+- `_calculate_risk_level(flags, is_safe, final_url, trust_score)` — 최종 위험도 계산
+- `_deduplicate_flags(flags)` — type 기준 중복 제거
 
-입력: risk_level (GREEN | YELLOW | RED)
-출력:
-  - GREEN: 안전 (초록불)
-  - YELLOW: 주의 (노란불)
-  - RED: 위험 (빨간불)
-```
+### 5.4 `services/url_analyzer.py` — URL 분석
 
-#### 3. Home.tsx
-```
-역할: 메인 페이지
+| 메서드 | 기능 |
+|--------|------|
+| `is_shortened_url(url)` | 단축 URL 서비스 도메인인지 판별 |
+| `resolve_redirects_with_chain(url)` | 리다이렉트를 최대 10회 따라가며 전체 체인 기록 |
+| `extract_domain_info(url)` | 도메인, TLD, IP 여부, 포트 등 파싱 |
 
-기능:
+### 5.5 `services/threat_detector.py` — 위협 탐지
+
+**URL 구조 분석** (`analyze_url_structure`):
+
+| 탐지 항목 | 플래그 타입 | 심각도 |
+|-----------|-------------|--------|
+| 의심스러운 TLD (.xyz, .tk 등) | `suspicious_tld` | WARNING |
+| IP 주소를 도메인으로 사용 | `ip_address` | WARNING |
+| 비표준 포트 사용 | `non_standard_port` | WARNING |
+| 긴 서브도메인 | `long_subdomain` | WARNING |
+| 타이포스쿼팅 (유사 도메인) | `typosquatting` | DANGER |
+| 피싱 URL 패턴 | `phishing_pattern` | DANGER |
+
+타이포스쿼팅 탐지 방식:
+- difflib 유사도 (0.7~1.0 사이면 의심)
+- 문자 치환 패턴 (0→o, 1→l, rn→m 등)
+
+**콘텐츠 분석** (`analyze_page_content`):
+
+| 탐지 항목 | 플래그 타입 | 심각도 |
+|-----------|-------------|--------|
+| 로그인 폼 | `login_form` | INFO |
+| 로그인 경로 | `login_path` | INFO |
+| 개인정보 입력 요청 | `personal_info_request` | WARNING |
+| 결제 정보 요청 | `payment_form` | WARNING |
+
+### 5.6 `services/safe_browsing.py` — Google Safe Browsing
+
+- `GOOGLE_SAFE_BROWSING_API_KEY`가 있으면 실제 Google API 호출
+- 없으면 Mock 모드 (테스트용 악성 URL만 탐지)
+- 반환: `(is_safe: bool, threats: list[str])`
+
+### 5.7 `services/domain_analyzer.py` — 도메인/SSL 분석
+
+| 기능 | 설명 |
+|------|------|
+| SSL 인증서 추출 | 발급기관, 유효기간, 만료 여부 |
+| 발급기관 신뢰도 평가 | DigiCert(100), GlobalSign(100), Let's Encrypt(60) 등 |
+| 도메인 나이 추정 | 인증서 발급일 기준 |
+| 종합 신뢰 점수 | 100점 기준 감점 방식 (0~100점) |
+
+### 5.8 `services/summary_generator.py` — 자연어 요약
+
+템플릿 기반으로 분석 결과를 한국어 2~3문장으로 요약합니다. 상세 내용은 [10. 자연어 요약 시스템](#10-자연어-요약-시스템) 참조.
+
+### 5.9 `models/schemas.py` — 데이터 모델
+
+| 모델 | 용도 |
+|------|------|
+| `ScanRequest` | 요청 바디 (`url: str`) |
+| `ScanData` | 응답 데이터 본체 |
+| `ScanResponse` | 최종 응답 래퍼 (`status` + `data`) |
+| `Flag` | 탐지된 위험 요소 (`type`, `severity`, `message`) |
+| `RiskLevel` | 위험도 enum (`GREEN`, `YELLOW`, `RED`) |
+| `Severity` | 플래그 심각도 enum (`info`, `warning`, `danger`) |
+| `SSLInfo` | SSL 인증서 정보 |
+| `DomainAnalysis` | 도메인 분석 결과 |
+| `RedirectHop` | 리다이렉트 체인 한 단계 |
+| `InfoRequirement` | 요구 정보 수준 (LOW/MEDIUM/HIGH) |
+| `SafeBrowsingResult` | Safe Browsing 검사 결과 |
+
+---
+
+## 6. Frontend 상세
+
+### 6.1 라우팅 (`App.tsx`)
+
+| 경로 | 페이지 | 설명 |
+|------|--------|------|
+| `/` | `Home.tsx` | 메인 - QR 스캔 + URL 입력 |
+| `/result` | `Result.tsx` | 분석 결과 표시 |
+| `/history` | `History.tsx` | 스캔 기록 + 통계 |
+| `/settings` | `Settings.tsx` | 테마, 효과음, 진동 설정 |
+| `/generate` | `Generate.tsx` | QR 코드 생성기 |
+
+하단 네비게이션 바에 스캔, 생성, 기록, 설정 4개 탭이 항상 표시됩니다.
+
+### 6.2 컴포넌트 (`components/`)
+
+#### `Layout.tsx`
+- 전체 앱 레이아웃 (헤더 + 컨텐츠 영역 + 하단 네비게이션)
+- 헤더: 로고 + "QR Guardian" 텍스트
+- 하단 네비: 스캔 / 생성 / 기록 / 설정 4개 탭
+
+#### `QRScanner.tsx`
+- html5-qrcode 라이브러리 사용
+- 카메라 스트림 → QR 인식 → `onScan(url)` 콜백
+
+#### `TrafficLight.tsx`
+- GREEN/YELLOW/RED 신호등 UI
+- 활성화된 불 + 글로우 애니메이션
+- 크기: sm / md / lg
+
+#### `ResultCard.tsx` (6개 컴포넌트 export)
+
+| 컴포넌트 | 표시 내용 |
+|----------|-----------|
+| `UrlInfo` | 원본 URL / 최종 URL (다르면 둘 다 표시) |
+| `FlagsList` | 탐지된 위험 요소 목록 (severity별 색상 구분) |
+| `InfoRequirementCard` | 요구 정보 수준 (LOW/MEDIUM/HIGH) |
+| `SafeBrowsingCard` | Safe Browsing 검사 결과 (안전/위협) |
+| `DomainAnalysisCard` | 도메인 분석 (신뢰 점수 바, SSL 정보, 도메인 나이) |
+| `RedirectChainCard` | 리다이렉트 경로 (단계별 도메인 + 상태코드) |
+
+### 6.3 페이지 (`pages/`)
+
+#### `Home.tsx` — 메인 페이지
 1. QR 스캐너 표시
-2. URL 직접 입력 폼
-3. 스캔/입력된 URL을 Backend로 전송
-4. 분석 결과 받으면 Result 페이지로 이동
-```
+2. "또는 직접 입력" 구분선
+3. URL 입력 폼 + "URL 검사" 버튼
+4. 분석 중 로딩 오버레이 (스피너)
+5. 스캔 완료 → `navigate('/result', { state: { scanData } })`
+6. 스캔 기록 자동 저장 (`addScanToHistory`)
+7. 위험도별 알림음/진동 재생 (`notifyRiskLevel`)
 
-#### 4. Result.tsx
-```
-역할: 분석 결과 표시
+#### `Result.tsx` — 결과 페이지
+표시 순서:
+1. 신호등 (`TrafficLight`)
+2. **자연어 요약 카드** (`summary`)
+3. URL 정보 (`UrlInfo`)
+4. 위험 요소 목록 (`FlagsList`)
+5. 요구 정보 수준 (`InfoRequirementCard`)
+6. Safe Browsing 결과 (`SafeBrowsingCard`)
+7. 도메인 분석 (`DomainAnalysisCard`)
+8. 리다이렉트 경로 (`RedirectChainCard`)
+9. 버튼: URL 열기 / URL 복사 / 결과 공유 / 다시 스캔
 
-표시 내용:
-1. 신호등 (위험도)
-2. 원본 URL / 최종 URL
-3. 탐지된 위험 요소 목록
-4. 요구 정보 수준 (LOW/MEDIUM/HIGH)
-5. URL 열기/복사 버튼
-```
+#### `History.tsx` — 스캔 기록
+- localStorage에 최대 50건 저장
+- 통계: 전체/오늘/이번 주 스캔 수, 안전/주의/위험 비율 바
+- 개별 삭제 + 전체 삭제
 
-### API 호출 (services/api.ts)
+#### `Settings.tsx` — 설정
+- 다크/라이트 테마 토글
+- 효과음 ON/OFF + 테스트
+- 진동 ON/OFF + 테스트
+- 앱 버전 정보
+
+#### `Generate.tsx` — QR 코드 생성
+- URL 입력 → QR 코드 이미지 생성 (qrcode.react)
+- 다운로드 (PNG) / 클립보드 복사
+
+### 6.4 서비스 (`services/`)
+
+#### `api.ts`
+```typescript
+scanUrl(url: string): Promise<ScanResponse>   // POST /api/scan
+healthCheck(): Promise<boolean>                 // GET /health
+```
+- `VITE_API_URL` 환경변수 또는 프로덕션 Railway URL 사용
+
+#### `scanHistory.ts`
+- localStorage 키: `qr-guardian-history`
+- 최대 50건 (FIFO)
+- `addScanToHistory()`, `getScanHistory()`, `clearScanHistory()`, `deleteScanItem()`, `getScanStats()`
+
+#### `notifications.ts`
+- Web Audio API로 위험도별 효과음 재생
+  - GREEN: 높은 주파수 차임 (800, 1000Hz)
+  - YELLOW: 중간 주파수 경고음 (600, 400Hz)
+  - RED: 낮은 주파수 경보음 (300, 200, 300Hz)
+- `navigator.vibrate()`로 위험도별 진동 패턴
+
+#### `share.ts`
+- Web Share API (모바일) 우선, 실패 시 클립보드 복사
+- 공유 텍스트: 위험도 이모지 + URL + 신뢰 점수 + 위험 요소 목록
+
+### 6.5 타입 (`types/index.ts`)
+
+Backend `schemas.py`와 1:1 대응하는 TypeScript 인터페이스:
 
 ```typescript
-// Backend로 URL 분석 요청
-export async function scanUrl(url: string): Promise<ScanResponse> {
-  const response = await fetch(`${API_BASE}/api/scan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  })
-  return response.json()
+ScanData {
+  original_url, final_url, risk_level, summary,
+  flags, info_requirement, safe_browsing,
+  domain_analysis?, redirect_chain?
 }
 ```
 
+### 6.6 컨텍스트 (`contexts/ThemeContext.tsx`)
+
+- `dark` / `light` 테마 관리
+- localStorage 키: `qr-guardian-theme`
+- 시스템 설정(prefers-color-scheme) 자동 감지
+
 ---
 
-## Backend 상세
+## 7. 데이터 흐름 (스캔 파이프라인)
 
-### 디렉토리 구조
+사용자가 URL을 스캔/입력하면 아래 순서로 처리됩니다:
 
 ```
-backend/
-├── app/
-│   ├── main.py              # FastAPI 앱 진입점
-│   │
-│   ├── core/                # 핵심 설정
-│   │   └── config.py        # 환경 변수, 설정값
-│   │
-│   ├── routers/             # API 엔드포인트
-│   │   └── scan.py          # /api/scan 라우터
-│   │
-│   ├── services/            # 비즈니스 로직
-│   │   ├── url_analyzer.py  # URL 분석 (리다이렉트 추적)
-│   │   ├── threat_detector.py # 위협 탐지 로직
-│   │   ├── safe_browsing.py # Google Safe Browsing 연동
-│   │   └── domain_analyzer.py # SSL 인증서/도메인 나이 분석
-│   │
-│   └── models/              # 데이터 모델
-│       └── schemas.py       # Pydantic 스키마 (요청/응답)
-│
-├── requirements.txt         # Python 의존성
-└── Dockerfile               # Docker 빌드 설정
-```
-
-### 주요 모듈 설명
-
-#### 1. main.py
-```python
-# FastAPI 앱 생성 및 설정
-# - CORS 설정 (Frontend에서 접근 허용)
-# - 라우터 등록
-# - 헬스체크 엔드포인트
-```
-
-#### 2. routers/scan.py
-```
-역할: /api/scan 엔드포인트 처리
-
-처리 흐름:
-1. URL 수신
-2. URL 유효성 검사
-3. 단축 URL 여부 확인
-4. 리다이렉트 추적 (최종 URL 획득)
-5. URL 구조 분석
-6. 페이지 콘텐츠 분석
-7. Safe Browsing 검사
-8. 위험도 계산
-9. 결과 반환
-```
-
-#### 3. services/url_analyzer.py
-```
-역할: URL 분석
-
-기능:
-- is_shortened_url(): 단축 URL 여부 확인
-  → bit.ly, tinyurl.com 등 알려진 단축 서비스 체크
-
-- resolve_redirects(): 리다이렉트 추적
-  → 최대 10회까지 리다이렉트를 따라가서 최종 URL 획득
-
-- extract_domain_info(): 도메인 정보 추출
-  → TLD, IP 여부, 포트 번호 등
-```
-
-#### 4. services/threat_detector.py
-```
-역할: 위협 탐지
-
-탐지 항목:
-1. 의심스러운 TLD (.xyz, .tk 등)
-2. IP 주소 사용 (도메인 대신)
-3. 비표준 포트
-4. 긴 서브도메인
-5. 타이포스쿼팅 (gooogle.com 등)
-6. 로그인 페이지 패턴
-7. 개인정보 요청 패턴
-8. 피싱 URL 패턴
-
-위험도 계산:
-- DANGER 플래그 1개 이상 → RED
-- WARNING 플래그 2개 이상 → YELLOW
-- WARNING 플래그 1개 → YELLOW
-- 그 외 → GREEN
-```
-
-#### 5. services/safe_browsing.py
-```
-역할: Google Safe Browsing API 연동
-
-동작:
-- API 키가 있으면 → 실제 API 호출
-- API 키가 없으면 → Mock 데이터로 테스트
-  (알려진 테스트용 악성 URL만 탐지)
-```
-
-#### 6. services/domain_analyzer.py (신규)
-```
-역할: SSL 인증서 및 도메인 특성 분석
-
-기능:
-- SSL 인증서 정보 추출 (발급기관, 유효기간)
-- 인증서 발급기관 신뢰도 평가
-  → DigiCert, GlobalSign (높음)
-  → Let's Encrypt (낮음 - 무료, 피싱에 많이 사용)
-- 도메인 나이 추정 (인증서 발급일 기준)
-- 종합 신뢰 점수 계산 (0-100점)
-
-신뢰도 등급:
-- high (90점 이상): DigiCert, GlobalSign, Comodo 등
-- medium (70-89점): Amazon, Google Trust 등
-- low (60-69점): Let's Encrypt 등 무료 인증서
-- unknown (60점 미만): 알 수 없는 발급기관
-```
-
-### 설정값 (core/config.py)
-
-```python
-# 의심스러운 TLD 목록
-SUSPICIOUS_TLDS = [".xyz", ".top", ".tk", ...]
-
-# 단축 URL 서비스 목록
-SHORTENER_DOMAINS = ["bit.ly", "tinyurl.com", ...]
-
-# 타이포스쿼팅 탐지용 유명 브랜드
-POPULAR_BRANDS = ["google", "facebook", "naver", ...]
+[사용자] QR 스캔 또는 URL 입력
+    │
+    ▼
+[Home.tsx] analyzeUrl(url) 호출
+    │
+    ▼
+[api.ts] POST /api/scan { url } → Backend
+    │
+    ▼
+[scan.py] 파이프라인 시작
+    │
+    ├─① URL 기본 검증 + https:// 자동 추가
+    │
+    ├─② 단축 URL 확인 → shortened_url 플래그
+    │
+    ├─③ 리다이렉트 추적 (최대 10회)
+    │   └─ 결과: final_url + redirect_chain
+    │   └─ 3회 초과 → multiple_redirects 플래그
+    │   └─ 2개 이상 도메인 경유 → cross_domain_redirect 플래그
+    │
+    ├─④ URL 구조 분석 (final_url + original_url)
+    │   └─ 타이포스쿼팅, 피싱 패턴, 의심 TLD, IP주소 등
+    │
+    ├─⑤ 페이지 콘텐츠 분석 (final_url)
+    │   └─ 로그인 폼, 개인정보 입력, 결제 폼 등
+    │
+    ├─⑥ Google Safe Browsing 검사
+    │   └─ 위협 감지 시 → safe_browsing_threat 플래그
+    │
+    ├─⑦ 도메인 분석 (SSL + 도메인 나이)
+    │   └─ 신뢰 도메인이 아닌 경우에만 플래그 추가
+    │
+    ├─⑧ 위험도 계산 → GREEN / YELLOW / RED
+    │
+    ├─⑨ 플래그 중복 제거
+    │
+    ├─⑩ 자연어 요약 생성
+    │
+    └─⑪ ScanResponse 반환
+         │
+         ▼
+[Home.tsx] 응답 수신
+    ├─ 스캔 기록 저장 (localStorage)
+    ├─ 알림음/진동 재생
+    └─ Result 페이지로 이동
+         │
+         ▼
+[Result.tsx] 결과 표시
+    ├─ 신호등 (TrafficLight)
+    ├─ 자연어 요약 카드
+    ├─ 상세 분석 카드들
+    └─ 액션 버튼 (URL 열기, 복사, 공유, 다시 스캔)
 ```
 
 ---
 
-## 배포 구조
+## 8. API 명세
 
-### Railway 배포 구성
+### `POST /api/scan`
 
-```
-Railway Project
-├── Backend Service
-│   ├── GitHub: sgggg123/qr-guardian (backend/)
-│   ├── 빌드: Dockerfile
-│   ├── 포트: 8000
-│   └── URL: https://xxx.up.railway.app
-│
-└── Frontend Service
-    ├── GitHub: sgggg123/qr-guardian (frontend/)
-    ├── 빌드: Dockerfile
-    ├── 포트: 8080
-    ├── 환경변수: VITE_API_URL=<Backend URL>
-    └── URL: https://xxx.up.railway.app
-```
+URL을 분석합니다.
 
-### 자동 배포 흐름
-
-```
-git push origin main
-       │
-       ▼
-GitHub 웹훅 → Railway 감지
-       │
-       ▼
-Docker 이미지 빌드
-       │
-       ▼
-컨테이너 배포
-       │
-       ▼
-헬스체크 → 서비스 활성화
-```
-
----
-
-## API 명세
-
-### POST /api/scan
-
-QR 코드에서 추출한 URL을 분석합니다.
-
-**Request:**
+**요청:**
 ```json
 {
   "url": "https://bit.ly/example"
 }
 ```
 
-**Response (성공):**
+**성공 응답:**
 ```json
 {
   "status": "success",
   "data": {
     "original_url": "https://bit.ly/example",
-    "final_url": "https://example.com/login",
+    "final_url": "https://example.com/page",
     "risk_level": "YELLOW",
+    "summary": "일부 주의가 필요한 요소가 발견되었습니다. 단축 URL로 실제 목적지가 숨겨져 있습니다. 개인정보 입력 시 주의하세요.",
     "flags": [
       {
         "type": "shortened_url",
         "severity": "warning",
-        "message": "단축 URL이 감지되었습니다"
-      },
-      {
-        "type": "login_form",
-        "severity": "info",
-        "message": "로그인 폼이 감지되었습니다"
+        "message": "단축 URL이 감지되었습니다. 실제 목적지가 숨겨져 있을 수 있습니다."
       }
     ],
     "info_requirement": {
-      "level": "MEDIUM",
-      "evidence": ["이메일 입력 필드", "비밀번호 입력 필드"]
+      "level": "LOW",
+      "evidence": []
     },
     "safe_browsing": {
       "is_safe": true,
@@ -421,27 +541,25 @@ QR 코드에서 추출한 URL을 분석합니다.
       "domain": "example.com",
       "ssl_info": {
         "issuer": "Let's Encrypt",
-        "valid_from": "2024-01-01T00:00:00",
-        "valid_until": "2024-04-01T00:00:00",
+        "valid_from": "2026-01-01T00:00:00",
+        "valid_until": "2026-04-01T00:00:00",
         "trust_level": "low",
         "is_expired": false,
-        "days_until_expiry": 60
+        "days_until_expiry": 54
       },
-      "domain_age_days": 30,
+      "domain_age_days": 36,
       "trust_score": 65,
-      "risk_factors": [
-        {"type": "low_trust_issuer", "message": "무료/저신뢰 인증서 발급기관", "severity": "warning"}
-      ]
+      "risk_factors": []
     },
     "redirect_chain": [
       {"url": "https://bit.ly/example", "status_code": 0, "domain": "bit.ly"},
-      {"url": "https://example.com/login", "status_code": 301, "domain": "example.com"}
+      {"url": "https://example.com/page", "status_code": 301, "domain": "example.com"}
     ]
   }
 }
 ```
 
-**Response (에러):**
+**에러 응답:**
 ```json
 {
   "status": "error",
@@ -450,69 +568,335 @@ QR 코드에서 추출한 URL을 분석합니다.
 }
 ```
 
-### GET /health
+### `GET /health`
 
-서버 상태 확인
+서버 상태 확인.
 
-**Response:**
 ```json
-{
-  "status": "healthy",
-  "service": "qr-guardian-api"
-}
+{ "status": "healthy", "service": "qr-guardian-api" }
+```
+
+### `GET /`
+
+API 정보.
+
+```json
+{ "name": "QR Guardian API", "version": "1.0.0" }
 ```
 
 ---
 
-## 위험도 판정 기준
+## 9. 위험도 판정 시스템
 
-| 위험도 | 조건 | 예시 |
-|--------|------|------|
-| RED | Safe Browsing 위협 탐지 또는 DANGER 플래그 | 알려진 피싱 사이트 |
-| YELLOW | WARNING 플래그 1개 이상 | 단축 URL, 로그인 페이지 |
-| GREEN | 플래그 없음 | 일반적인 안전한 URL |
+`scan.py`의 `_calculate_risk_level()` 함수가 담당합니다.
 
-### 플래그 종류
+### 판정 순서
 
-| 타입 | 심각도 | 설명 |
-|------|--------|------|
-| shortened_url | WARNING | 단축 URL |
-| suspicious_tld | WARNING | 의심스러운 TLD |
-| ip_address | WARNING | IP 주소 사용 |
-| typosquatting | DANGER | 브랜드 사칭 |
-| phishing_pattern | DANGER | 피싱 URL 패턴 |
-| login_form | INFO | 로그인 폼 존재 |
-| payment_form | WARNING | 결제 폼 존재 |
-| safe_browsing_threat | DANGER | 알려진 악성 URL |
-| new_domain | WARNING | 최근 발급된 인증서 (30일 미만) |
-| low_trust_issuer | WARNING | 무료/저신뢰 인증서 발급기관 |
-| expired_cert | DANGER | 만료된 SSL 인증서 |
-| expiring_soon | WARNING | 곧 만료될 인증서 (30일 이내) |
-| cross_domain_redirect | WARNING | 여러 도메인 경유 리다이렉트 |
-| multiple_redirects | WARNING | 다중 리다이렉트 (3회 이상) |
+1. **화이트리스트 도메인 + Safe Browsing 안전** → 즉시 `GREEN`
+2. **Safe Browsing 위협** → 즉시 `RED`
+3. **DANGER 플래그 존재** (typosquatting, phishing_pattern, expired_cert 등) → `RED`
+4. **신뢰 점수 30 미만** → `RED`
+5. **WARNING 3개 이상 또는 신뢰 점수 60 미만** → `YELLOW`
+6. **유의미한 WARNING 1개 이상** (suspicious_tld, new_domain, ip_address 등) → `YELLOW`
+7. **그 외** → `GREEN`
+
+### 플래그 전체 목록
+
+| 플래그 타입 | 심각도 | 설명 | 발생 출처 |
+|-------------|--------|------|-----------|
+| `shortened_url` | WARNING | 단축 URL | url_analyzer |
+| `multiple_redirects` | WARNING | 3회 이상 리다이렉트 | scan.py |
+| `cross_domain_redirect` | WARNING | 여러 도메인 경유 | scan.py |
+| `suspicious_tld` | WARNING | 의심스러운 TLD | threat_detector |
+| `ip_address` | WARNING | IP 주소 사용 | threat_detector |
+| `non_standard_port` | WARNING | 비표준 포트 | threat_detector |
+| `long_subdomain` | WARNING | 긴 서브도메인 | threat_detector |
+| `typosquatting` | DANGER | 브랜드 사칭 의심 | threat_detector |
+| `phishing_pattern` | DANGER | 피싱 URL 패턴 | threat_detector |
+| `login_form` | INFO | 로그인 폼 존재 | threat_detector |
+| `login_path` | INFO | 로그인 경로 | threat_detector |
+| `personal_info_request` | WARNING | 개인정보 입력 요청 | threat_detector |
+| `payment_form` | WARNING | 결제 정보 요청 | threat_detector |
+| `safe_browsing_threat` | DANGER | 알려진 악성 URL | safe_browsing |
+| `new_domain` | WARNING | 30일 미만 신규 도메인 | domain_analyzer |
+| `low_trust_issuer` | WARNING | 무료/저신뢰 인증서 | domain_analyzer |
+| `expired_cert` | DANGER | 만료된 SSL 인증서 | domain_analyzer |
+| `expiring_soon` | WARNING | 30일 이내 만료 예정 | domain_analyzer |
 
 ---
 
-## 신뢰 점수 시스템
+## 10. 자연어 요약 시스템
 
-종합 신뢰 점수는 0-100점으로 계산됩니다.
+`summary_generator.py`가 분석 결과를 한국어 2~3문장으로 요약합니다.
 
-### 점수 감점 요인
+### 생성 과정 (3단계)
+
+```
+1단계 (판정문)  + 2단계 (위협 상세)  + 3단계 (행동 가이드)
+     ↓                  ↓                    ↓
+"이 사이트는     'naver'을 사칭하는      절대 로그인하거나
+ 위험할 수       것으로 의심됩니다."    개인정보를 입력하지
+ 있습니다."                              마세요."
+```
+
+### 1단계: 메인 판정문
+
+| 조건 | 출력 |
+|------|------|
+| GREEN + 신뢰 도메인 | "{도메인} 공식 사이트입니다. 안심하고 이용하셔도 됩니다." |
+| GREEN + 일반 | "특별한 위험 요소가 발견되지 않았습니다." |
+| YELLOW | "일부 주의가 필요한 요소가 발견되었습니다." |
+| RED | "이 사이트는 위험할 수 있습니다." |
+
+### 2단계: 위협 상세 (플래그 조합)
+
+| 플래그 | 출력 |
+|--------|------|
+| `typosquatting` | "'{brand}'을(를) 사칭하는 것으로 의심됩니다." |
+| `phishing_pattern` | "피싱 공격에 사용되는 URL 패턴이 포함되어 있습니다." |
+| `safe_browsing_threat` | "보안 데이터베이스에 위험 사이트로 등록되어 있습니다." |
+| `expired_cert` | "SSL 인증서가 만료된 상태입니다." |
+| `shortened_url` + `cross_domain_redirect` | "단축 URL 뒤에 여러 사이트를 거쳐 연결됩니다." |
+| `new_domain` + `low_trust_issuer` | "최근 만들어진 사이트이며 무료 인증서를 사용합니다." |
+| `ip_address` | "도메인 대신 IP 주소를 사용합니다." |
+| `suspicious_tld` | "의심스러운 도메인 확장자를 사용합니다." |
+
+### 3단계: 행동 가이드
+
+| 조건 | 출력 |
+|------|------|
+| GREEN | "정상적으로 이용 가능합니다." |
+| YELLOW | "개인정보 입력 시 주의하세요." |
+| RED + typosquatting/phishing | "절대 로그인하거나 개인정보를 입력하지 마세요." |
+| RED + safe_browsing | "이 사이트에 접속하지 않는 것을 권장합니다." |
+
+### 출력 예시
+
+| 시나리오 | 요약 |
+|----------|------|
+| google.com (GREEN, trusted) | "Google 공식 사이트입니다. 안심하고 이용하셔도 됩니다." |
+| 일반 사이트 (GREEN) | "특별한 위험 요소가 발견되지 않았습니다. 정상적으로 이용 가능합니다." |
+| 단축URL + 새 도메인 (YELLOW) | "일부 주의가 필요한 요소가 발견되었습니다. 단축 URL로 실제 목적지가 숨겨져 있습니다. 최근 만들어진 사이트입니다. 개인정보 입력 시 주의하세요." |
+| 타이포스쿼팅 naver (RED) | "이 사이트는 위험할 수 있습니다. 'naver'을(를) 사칭하는 것으로 의심됩니다. 절대 로그인하거나 개인정보를 입력하지 마세요." |
+| Safe Browsing 위험 (RED) | "이 사이트는 위험할 수 있습니다. 보안 데이터베이스에 위험 사이트로 등록되어 있습니다. 이 사이트에 접속하지 않는 것을 권장합니다." |
+
+### 확장 가능성
+
+`generate_summary()` 함수의 인터페이스(입력/출력)를 유지하면서 내부를 LLM API 호출로 교체하면, 나머지 코드 변경 없이 더 자연스러운 요약 생성이 가능합니다.
+
+---
+
+## 11. 신뢰 점수 시스템
+
+`domain_analyzer.py`가 0~100점 기준으로 계산합니다.
+
+### 감점 기준
 
 | 요인 | 감점 |
 |------|------|
-| 무료 인증서 (Let's Encrypt) | -15점 |
+| Let's Encrypt (무료 인증서) | -15점 |
 | 알 수 없는 인증서 발급기관 | -10점 |
 | 만료된 인증서 | -30점 |
-| 곧 만료될 인증서 (30일 이내) | -10점 |
+| 30일 이내 만료 예정 | -10점 |
 | 신규 도메인 (30일 미만) | -20점 |
 | 비교적 새로운 도메인 (90일 미만) | -5점 |
 
-### 점수 기반 위험도
+### 인증서 발급기관별 기본 점수
 
-| 점수 범위 | 위험도 |
-|-----------|--------|
-| 80-100 | GREEN |
-| 60-79 | YELLOW |
-| 30-59 | YELLOW |
-| 0-29 | RED |
+| 등급 | 발급기관 | 점수 |
+|------|----------|------|
+| high | DigiCert, GlobalSign | 100 |
+| high | Comodo, Sectigo | 95 |
+| medium | GoDaddy, Amazon | 90 |
+| medium | Google Trust, Cloudflare | 85 |
+| low | Let's Encrypt | 60 |
+
+### 점수 → 위험도 영향
+
+| 점수 | 위험도 판정에 미치는 영향 |
+|------|--------------------------|
+| 80~100 | 영향 없음 |
+| 60~79 | YELLOW 쪽으로 |
+| 30~59 | YELLOW |
+| 0~29 | RED |
+
+---
+
+## 12. 로컬 개발 환경
+
+### 필수 설치
+
+- Node.js 18+
+- Python 3.11+
+
+### Backend 실행
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate       # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+- API: http://localhost:8000
+- API 문서: http://localhost:8000/api/docs
+
+### Frontend 실행
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+- 앱: http://localhost:5173
+
+### Docker (전체 스택)
+
+```bash
+docker-compose -f docker-compose.dev.yml up
+```
+
+### 환경 변수
+
+| 변수 | 위치 | 설명 | 기본값 |
+|------|------|------|--------|
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Backend `.env` | Safe Browsing API 키 | (없으면 Mock 모드) |
+| `ENVIRONMENT` | Backend `.env` | 실행 환경 | `development` |
+| `VITE_API_URL` | Frontend `.env` | Backend URL | 프로덕션 Railway URL |
+
+### 테스트 URL 예시
+
+```bash
+# 안전한 URL
+curl -X POST http://localhost:8000/api/scan \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://google.com"}'
+
+# 단축 URL
+curl -X POST http://localhost:8000/api/scan \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://bit.ly/test"}'
+```
+
+---
+
+## 13. 배포
+
+### Railway 구성
+
+```
+Railway Project
+├── Backend Service
+│   ├── 소스: backend/
+│   ├── 빌드: Dockerfile
+│   └── 포트: 8000
+│
+└── Frontend Service
+    ├── 소스: frontend/
+    ├── 빌드: Dockerfile
+    ├── 환경변수: VITE_API_URL=<Backend URL>
+    └── 포트: 8080
+```
+
+### 자동 배포 흐름
+
+```
+git push origin main → GitHub 웹훅 → Railway 감지 → Docker 빌드 → 배포 → 헬스체크
+```
+
+---
+
+## 14. 테스트
+
+### Backend 테스트
+
+```bash
+cd backend
+source venv/bin/activate
+python -m pytest tests/ -v
+```
+
+현재 테스트:
+- `tests/test_summary_generator.py` — 요약 생성기 11개 테스트 케이스
+  - GREEN (trusted / untrusted)
+  - YELLOW (단축URL + 새도메인, 단축URL + 크로스도메인)
+  - RED (타이포스쿼팅, Safe Browsing, 피싱 패턴, 만료 인증서)
+  - 조합 (new_domain + low_trust_issuer, IP 주소)
+
+### Frontend 타입 체크
+
+```bash
+cd frontend
+npx tsc --noEmit
+```
+
+---
+
+## 15. 협업 가이드
+
+### 브랜치
+
+| 브랜치 | 용도 | 배포 |
+|--------|------|------|
+| `main` | 안정 버전 (배포용) | Railway 자동 배포 |
+| `dev` | 개발용 | 배포 안 됨 |
+
+### 작업 흐름
+
+```bash
+# 1. 최신 코드 받기
+git checkout dev && git pull origin dev
+
+# 2. 작업 후 커밋
+git add . && git commit -m "feat: 새 기능 추가"
+
+# 3. dev에 푸시
+git push origin dev
+
+# 4. 배포 (main에 병합)
+git checkout main && git merge dev && git push origin main
+```
+
+### 커밋 메시지 규칙
+
+- `feat:` 새 기능
+- `fix:` 버그 수정
+- `docs:` 문서 수정
+- `refactor:` 리팩토링
+- `test:` 테스트 추가/수정
+
+### 주요 수정 포인트
+
+| 수정하고 싶은 것 | 파일 |
+|------------------|------|
+| UI 스타일 | `frontend/src/index.css` |
+| QR 스캐너 동작 | `frontend/src/components/QRScanner.tsx` |
+| 결과 화면 레이아웃 | `frontend/src/pages/Result.tsx` |
+| 위협 탐지 규칙 추가 | `backend/app/services/threat_detector.py` |
+| 요약 메시지 수정 | `backend/app/services/summary_generator.py` |
+| 화이트리스트 도메인 추가 | `backend/app/core/config.py` → `TRUSTED_DOMAINS` |
+| 브랜드 추가 (타이포스쿼팅) | `backend/app/core/config.py` → `POPULAR_BRANDS` |
+| 단축URL 서비스 추가 | `backend/app/core/config.py` → `SHORTENER_DOMAINS` |
+| API 응답 필드 추가 | `backend/app/models/schemas.py` + `frontend/src/types/index.ts` 동시 수정 |
+
+### 문제 해결
+
+```bash
+# npm 문제
+rm -rf frontend/node_modules frontend/package-lock.json
+cd frontend && npm install
+
+# Python 가상환경 문제
+rm -rf backend/venv
+cd backend && python -m venv venv
+source venv/bin/activate && pip install -r requirements.txt
+
+# 포트 충돌 (Linux/Mac)
+lsof -i :8000 && kill -9 <PID>
+
+# 포트 충돌 (Windows)
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+```

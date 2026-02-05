@@ -51,6 +51,7 @@ export interface ScanData {
   original_url: string
   final_url: string
   risk_level: RiskLevel
+  summary: string
   flags: Flag[]
   info_requirement: InfoRequirement
   safe_browsing: SafeBrowsingResult

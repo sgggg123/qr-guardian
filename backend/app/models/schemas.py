@@ -71,6 +71,7 @@ class ScanData(BaseModel):
     original_url: str
     final_url: str
     risk_level: RiskLevel
+    summary: str
     flags: List[Flag]
     info_requirement: InfoRequirement
     safe_browsing: SafeBrowsingResult

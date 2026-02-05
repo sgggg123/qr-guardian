@@ -71,6 +71,14 @@ export default function Result() {
       <div className="text-center">
         <h1 className="text-2xl font-bold text-white mb-4">분석 결과</h1>
         <TrafficLight level={scanData.risk_level} size="lg" />
+
+        {scanData.summary && (
+          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 mt-4">
+            <p className="text-sm text-slate-200 leading-relaxed">
+              {scanData.summary}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">

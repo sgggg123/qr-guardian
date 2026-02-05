@@ -10,6 +10,7 @@ from app.services.url_analyzer import url_analyzer
 from app.services.threat_detector import threat_detector
 from app.services.safe_browsing import safe_browsing_service
 from app.services.domain_analyzer import domain_analyzer
+from app.services.summary_generator import generate_summary
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
@@ -120,6 +121,17 @@ async def scan_url(request: ScanRequest):
         # Remove duplicate flags
         unique_flags = _deduplicate_flags(all_flags)
 
+        # Generate natural language summary
+        summary = generate_summary(
+            risk_level=risk_level,
+            flags=unique_flags,
+            final_url=final_url,
+            is_trusted=_is_trusted_domain(final_url),
+            trust_score=domain_result.get("trust_score", 100),
+            domain_name=domain_result.get("domain", ""),
+            is_safe=is_safe,
+        )
+
         # Build domain analysis response
         ssl_info_data = None
         if domain_result.get("ssl_info"):
@@ -157,6 +169,7 @@ async def scan_url(request: ScanRequest):
                 original_url=request.url,
                 final_url=final_url,
                 risk_level=risk_level,
+                summary=summary,
                 flags=unique_flags,
                 info_requirement=info_requirement,
                 safe_browsing=SafeBrowsingResult(
