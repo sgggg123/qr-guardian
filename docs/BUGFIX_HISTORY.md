@@ -1,6 +1,6 @@
-# 주요 버그 수정 기록
+# 주요 변경 기록
 
-> 커밋 `9cb5944`, `3eb0357` 에서 수정한 3가지 핵심 버그
+> 커밋 `9cb5944`, `3eb0357`, `9fac138` 에서 수정/추가한 핵심 변경사항
 
 ---
 
@@ -186,10 +186,66 @@ def analyze_url_structure(self, url, domain_info):
 
 ---
 
+---
+
+## 4. 자연어 요약 기능 추가 (`9fac138`)
+
+### 배경
+
+스캔 결과가 신호등 + 플래그 목록 + 도메인 분석 카드 등으로 나뉘어져 있어서, 한눈에 "그래서 이게 안전한 건지 위험한 건지"를 파악하기 어려웠음.
+
+### 추가 내용
+
+스캔 결과를 **한국어 2~3문장으로 요약**하는 `summary_generator.py` 모듈 추가.
+
+기존 `_calculate_risk_level()` 및 파이프라인은 **일체 수정하지 않고**, 파이프라인 마지막에 요약 생성 단계만 추가.
+
+### 생성 방식 (3단계 템플릿)
+
+```
+1단계: 판정문 (risk_level 기반)
+   "이 사이트는 위험할 수 있습니다."
+
+2단계: 위협 상세 (flag 조합 기반)
+   "'naver'을(를) 사칭하는 것으로 의심됩니다."
+
+3단계: 행동 가이드
+   "절대 로그인하거나 개인정보를 입력하지 마세요."
+```
+
+→ 3개를 합쳐서 자연스러운 문단으로 출력
+
+### 실제 출력 예시
+
+| 시나리오 | 요약 |
+|----------|------|
+| google.com (GREEN, trusted) | "Google 공식 사이트입니다. 안심하고 이용하셔도 됩니다. 정상적으로 이용 가능합니다." |
+| navar.com (RED, typosquatting) | "이 사이트는 위험할 수 있습니다. 'naver'을(를) 사칭하는 것으로 의심됩니다. 절대 로그인하거나 개인정보를 입력하지 마세요." |
+| bit.ly → figma.com (GREEN) | "Figma 공식 사이트입니다. 안심하고 이용하셔도 됩니다. 단축 URL로 실제 목적지가 숨겨져 있습니다. 정상적으로 이용 가능합니다." |
+
+### 변경 파일
+
+**Backend:**
+- `backend/app/services/summary_generator.py` **(신규)** — 템플릿 기반 요약 생성
+- `backend/app/models/schemas.py` — `ScanData`에 `summary: str` 필드 추가
+- `backend/app/routers/scan.py` — `generate_summary()` 호출 추가
+- `backend/tests/test_summary_generator.py` **(신규)** — 11개 regression 테스트
+
+**Frontend:**
+- `frontend/src/types/index.ts` — `ScanData`에 `summary: string` 추가
+- `frontend/src/pages/Result.tsx` — TrafficLight 아래에 요약 카드 표시
+
+### 확장 가능성
+
+`generate_summary()` 함수의 입출력 인터페이스를 유지하면서 내부만 LLM API 호출로 교체하면, 나머지 코드 변경 없이 더 자연스러운 요약 생성 가능.
+
+---
+
 ## 요약
 
-| # | 버그 | 핵심 원인 | 수정 방향 |
-|---|------|-----------|-----------|
+| # | 변경 | 핵심 원인/목적 | 수정 방향 |
+|---|------|----------------|-----------|
 | 1 | 신뢰 도메인이 YELLOW/RED | `twitter:card` 오탐 + 신뢰 도메인에 SSL 경고 | 패턴 정밀화 + 신뢰 도메인 플래그 제외/다운그레이드 |
 | 2 | 타이포스쿼팅 오탐/미탐 | 양방향 char_map + 1글자 차이만 허용 | 단방향 normalize + 2글자까지 허용 |
 | 3 | 리다이렉트 시 사칭 못 잡음 | final_url만 검사 | 원본 URL도 타이포스쿼팅 검사 |
+| 4 | 자연어 요약 기능 추가 | 결과가 분산되어 직관적 파악 어려움 | 3단계 템플릿으로 2~3문장 요약 생성 |
