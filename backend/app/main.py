@@ -6,9 +6,14 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
-from app.routers import scan
+from app.core.logging import setup_logging, get_logger
+from app.routers import scan, report, bulk
 
 is_production = settings.ENVIRONMENT == "production"
+
+# Initialize structured logging
+setup_logging(level="INFO" if is_production else "DEBUG")
+logger = get_logger("main")
 
 # Rate limiter: IP-based, 30 requests/minute
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
@@ -26,6 +31,7 @@ app.state.limiter = limiter
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning("Rate limit exceeded", extra={"client_ip": request.client.host if request.client else "unknown"})
     return JSONResponse(
         status_code=429,
         content={
@@ -34,6 +40,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
             "detail": str(exc.detail),
         },
     )
+
+
+logger.info("QR Guardian API started", extra={"environment": settings.ENVIRONMENT})
 
 
 # CORS configuration — separate exact origins from wildcard patterns
@@ -56,6 +65,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(scan.router)
+app.include_router(report.router)
+app.include_router(bulk.router)
 
 
 @app.get("/health")

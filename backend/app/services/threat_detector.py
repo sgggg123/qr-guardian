@@ -53,7 +53,7 @@ class ThreatDetector:
             r"verify.*identity",
             r"bank.*verification",
             r"card.*suspended",
-            # 한글 패턴
+            # 한글 패턴 (기본)
             r"본인.*인증",
             r"계정.*확인",
             r"비밀번호.*변경",
@@ -63,6 +63,35 @@ class ThreatDetector:
             r"긴급.*조치",
             r"계좌.*정지",
             r"카드.*중지",
+            # 택배 사칭 피싱
+            r"택배.*조회",
+            r"배송.*확인",
+            r"운송장.*조회",
+            r"배달.*완료.*확인",
+            r"택배.*배송.*실패",
+            r"미수령.*택배",
+            # 정부기관 사칭
+            r"국세청.*환급",
+            r"건강보험.*확인",
+            r"교통.*범칙금",
+            r"과태료.*납부",
+            r"정부.*지원금",
+            r"재난.*지원",
+            r"국민연금.*확인",
+            r"전자.*고지서",
+            # 금융 사칭
+            r"카드.*결제.*취소",
+            r"해외.*결제.*승인",
+            r"이체.*확인",
+            r"대출.*승인",
+            r"금리.*인하",
+            r"보험.*만기",
+            r"입금.*확인.*요청",
+            # 기타 사칭
+            r"청첩장.*확인",
+            r"돌잔치.*초대",
+            r"부고.*안내",
+            r"모바일.*초대장",
         ]
 
     def _is_trusted_domain(self, domain: str) -> bool:
@@ -159,13 +188,14 @@ class ThreatDetector:
             if domain_base == brand:
                 continue
 
-            # Check similarity
+            # Adaptive similarity threshold based on brand length
+            # Short brands (<=4 chars) are prone to false positives
+            threshold = 0.85 if len(brand) <= 4 else 0.7
             similarity = SequenceMatcher(None, domain_base, brand).ratio()
-            if 0.7 <= similarity < 1.0:
+            if threshold <= similarity < 1.0:
                 return brand
 
             # Check for common typosquatting patterns
-            # Adding/removing letters, substituting similar characters
             if self._is_typosquat_variant(domain_base, brand):
                 return brand
 

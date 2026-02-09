@@ -10,12 +10,15 @@ import {
   RedirectChainCard,
 } from '../components/ResultCard'
 import { shareResult, generateShareText, copyToClipboard } from '../services/share'
+import { reportUrl, getScreenshotUrl } from '../services/api'
 import type { ScanData } from '../types'
 
 export default function Result() {
   const location = useLocation()
   const scanData = location.state?.scanData as ScanData | undefined
   const [shareSuccess, setShareSuccess] = useState<string | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
+  const [reportSent, setReportSent] = useState(false)
 
   if (!scanData) {
     return <Navigate to="/" replace />
@@ -97,6 +100,35 @@ export default function Result() {
         {scanData.redirect_chain && scanData.redirect_chain.length > 1 && (
           <RedirectChainCard chain={scanData.redirect_chain} />
         )}
+
+        {/* Site Preview */}
+        <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-slate-400">사이트 미리보기</h3>
+            <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="text-xs text-primary-500 hover:text-primary-400"
+            >
+              {showPreview ? '숨기기' : '미리보기'}
+            </button>
+          </div>
+          {showPreview && (
+            <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-slate-600">
+              <img
+                src={getScreenshotUrl(scanData.final_url)}
+                alt="사이트 미리보기"
+                className="w-full h-auto"
+                loading="lazy"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none'
+                }}
+              />
+            </div>
+          )}
+          {!showPreview && (
+            <p className="text-xs text-gray-400 dark:text-slate-500">직접 접속하지 않고 사이트 모습을 확인할 수 있습니다</p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3 pt-4">
@@ -132,35 +164,50 @@ export default function Result() {
           </button>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <button
             onClick={handleCopyUrl}
-            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-1.5 text-sm"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            URL 복사
+            복사
           </button>
 
           <button
             onClick={handleShare}
-            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-1.5 text-sm"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-              />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
             </svg>
-            결과 공유
+            공유
+          </button>
+
+          <button
+            onClick={async () => {
+              if (reportSent) return
+              try {
+                await reportUrl(scanData.final_url)
+                setReportSent(true)
+                setShareSuccess('신고가 접수되었습니다')
+                setTimeout(() => setShareSuccess(null), 2000)
+              } catch {
+                alert('신고 접수에 실패했습니다')
+              }
+            }}
+            disabled={reportSent}
+            className={`py-3 border rounded-xl font-medium transition-colors flex items-center justify-center gap-1.5 text-sm ${
+              reportSent
+                ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500 border-gray-200 dark:border-slate-700'
+                : 'bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 dark:text-red-400 border-red-200 dark:border-red-500/30'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+            {reportSent ? '접수됨' : '신고'}
           </button>
         </div>
 

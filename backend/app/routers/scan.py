@@ -3,6 +3,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from app.core.logging import get_logger
+
+logger = get_logger("scan")
 from app.models.schemas import (
     ScanRequest, ScanResponse, ScanData, Flag, Severity,
     RiskLevel, SafeBrowsingResult, ErrorResponse,
@@ -68,7 +71,10 @@ async def scan_url(request: ScanRequest, req: Request):
     # Check cache
     cached = _get_cached(url)
     if cached:
+        logger.debug("Cache hit", extra={"url": url})
         return cached
+
+    scan_start = time.time()
 
     try:
         all_flags: list[Flag] = []
@@ -219,9 +225,16 @@ async def scan_url(request: ScanRequest, req: Request):
         # Cache the response
         _set_cache(url, response)
 
+        duration_ms = int((time.time() - scan_start) * 1000)
+        logger.info(
+            "Scan completed",
+            extra={"url": url, "risk_level": risk_level.value, "duration_ms": duration_ms},
+        )
+
         return response
 
     except Exception as e:
+        logger.error("Scan failed", extra={"url": url}, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"URL 분석 중 오류가 발생했습니다: {str(e)}"

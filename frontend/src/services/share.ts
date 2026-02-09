@@ -15,6 +15,11 @@ export function generateShareText(scanData: ScanData): string {
 
   let text = `[QR Guardian 분석 결과]\n\n`
   text += `${riskEmoji[scanData.risk_level]} 위험도: ${riskText[scanData.risk_level]}\n\n`
+
+  if (scanData.summary) {
+    text += `${scanData.summary}\n\n`
+  }
+
   text += `원본 URL: ${scanData.original_url}\n`
 
   if (scanData.original_url !== scanData.final_url) {

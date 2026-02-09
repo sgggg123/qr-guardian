@@ -83,12 +83,31 @@ export default function Home() {
 
       {isLoading && (
         <div className="fixed inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 max-w-sm w-full mx-4 text-center shadow-xl dark:shadow-none">
-            <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-gray-900 dark:text-white font-medium">URL 분석 중...</p>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-2">
-              위협 요소를 검사하고 있습니다
-            </p>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl dark:shadow-none">
+            {/* Skeleton: Traffic Light */}
+            <div className="flex justify-center mb-4">
+              <div className="w-20 bg-gray-100 dark:bg-slate-700 rounded-full p-3 flex flex-col items-center gap-1.5">
+                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
+                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
+                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
+              </div>
+            </div>
+            {/* Skeleton: Summary */}
+            <div className="space-y-2 mb-4">
+              <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded animate-pulse w-3/4 mx-auto" />
+              <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded animate-pulse w-1/2 mx-auto" />
+            </div>
+            {/* Skeleton: Cards */}
+            <div className="space-y-3">
+              <div className="h-20 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
+              <div className="h-16 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
+              <div className="h-16 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
+            </div>
+            {/* Progress text */}
+            <div className="mt-4 text-center">
+              <div className="w-8 h-8 border-3 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-sm text-gray-500 dark:text-slate-400">위협 요소를 검사하고 있습니다</p>
+            </div>
           </div>
         </div>
       )}

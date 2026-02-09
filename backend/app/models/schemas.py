@@ -89,3 +89,33 @@ class ErrorResponse(BaseModel):
     status: str = "error"
     message: str
     detail: Optional[str] = None
+
+
+# --- Bulk scan ---
+
+class BulkScanRequest(BaseModel):
+    urls: List[str]
+
+
+class BulkScanItem(BaseModel):
+    url: str
+    risk_level: Optional[RiskLevel] = None
+    summary: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BulkScanResponse(BaseModel):
+    status: str
+    results: List[BulkScanItem]
+
+
+# --- Report ---
+
+class ReportRequest(BaseModel):
+    url: str
+    reason: str = ""
+
+
+class ReportResponse(BaseModel):
+    status: str
+    message: str

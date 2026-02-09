@@ -2,6 +2,7 @@
 Domain age and SSL certificate analysis service.
 Provides additional risk signals based on domain characteristics.
 """
+import asyncio
 import ssl
 import socket
 from datetime import datetime, timedelta
@@ -103,12 +104,17 @@ class DomainAnalyzer:
             return None
 
     async def _get_ssl_info(self, domain: str) -> Optional[dict]:
-        """Extract SSL certificate information."""
+        """Extract SSL certificate information using async I/O."""
         try:
-            context = ssl.create_default_context()
-            with socket.create_connection((domain, 443), timeout=5) as sock:
-                with context.wrap_socket(sock, server_hostname=domain) as ssock:
-                    cert = ssock.getpeercert()
+            ssl_context = ssl.create_default_context()
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(domain, 443, ssl=ssl_context, server_hostname=domain),
+                timeout=5,
+            )
+            ssl_object = writer.get_extra_info("ssl_object")
+            cert = ssl_object.getpeercert() if ssl_object else None
+            writer.close()
+            await writer.wait_closed()
 
             if not cert:
                 return None

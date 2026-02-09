@@ -6,6 +6,7 @@ import Result from './pages/Result'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import Generate from './pages/Generate'
+import BulkScan from './pages/BulkScan'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/generate" element={<Generate />} />
+          <Route path="/bulk" element={<BulkScan />} />
         </Routes>
       </Layout>
     </ThemeProvider>
