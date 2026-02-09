@@ -7,6 +7,7 @@ export interface ScanHistoryItem {
   riskLevel: RiskLevel
   trustScore: number | null
   scannedAt: string
+  scanData?: ScanData
 }
 
 export interface ScanStats {
@@ -23,6 +24,7 @@ export interface ScanStats {
 
 const STORAGE_KEY = 'qr-guardian-history'
 const MAX_HISTORY = 50
+const MAX_FULL_DATA = 20
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2)
@@ -46,17 +48,27 @@ export function addScanToHistory(scanData: ScanData): ScanHistoryItem {
     finalUrl: scanData.final_url,
     riskLevel: scanData.risk_level,
     trustScore: scanData.domain_analysis?.trust_score ?? null,
-    scannedAt: new Date().toISOString()
+    scannedAt: new Date().toISOString(),
+    scanData,
   }
 
   // Add to beginning, limit to MAX_HISTORY items
   const updated = [newItem, ...history].slice(0, MAX_HISTORY)
 
+  // Only keep full scanData for the most recent MAX_FULL_DATA items
+  const toSave = updated.map((item, index) => {
+    if (index >= MAX_FULL_DATA) {
+      const { scanData: _, ...rest } = item
+      return rest
+    }
+    return item
+  })
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch {
-    // Storage full, try to clear old items
-    const reduced = updated.slice(0, 20)
+    // Storage full, try to clear old items and strip scanData
+    const reduced = toSave.slice(0, 20).map(({ scanData: _, ...rest }) => rest)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(reduced))
   }
 

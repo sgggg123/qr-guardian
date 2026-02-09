@@ -54,7 +54,7 @@ export default function TrafficLight({ level, size = 'md' }: TrafficLightProps) 
   return (
     <div className="flex flex-col items-center">
       <div
-        className={`${sizes.container} bg-slate-800 rounded-full p-3 flex flex-col items-center ${sizes.gap} border border-slate-700`}
+        className={`${sizes.container} bg-gray-100 dark:bg-slate-800 rounded-full p-3 flex flex-col items-center ${sizes.gap} border border-gray-200 dark:border-slate-700`}
       >
         {(['RED', 'YELLOW', 'GREEN'] as RiskLevel[]).map((l) => {
           const isActive = l === level
@@ -66,7 +66,7 @@ export default function TrafficLight({ level, size = 'md' }: TrafficLightProps) 
               className={`${sizes.light} rounded-full transition-all duration-300 ${
                 isActive
                   ? `${lightConfig.color} ${lightConfig.glow} shadow-lg animate-pulse-slow`
-                  : 'bg-slate-700'
+                  : 'bg-gray-300 dark:bg-slate-700'
               }`}
             />
           )
@@ -75,7 +75,7 @@ export default function TrafficLight({ level, size = 'md' }: TrafficLightProps) 
 
       <div className="mt-3 text-center">
         <p className={`text-lg font-bold ${config.textColor}`}>{config.label}</p>
-        <p className="text-sm text-slate-400 mt-1 max-w-[200px]">{config.description}</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1 max-w-[200px]">{config.description}</p>
       </div>
     </div>
   )

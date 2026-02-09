@@ -1,5 +1,8 @@
+import time
 from urllib.parse import urlparse
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.models.schemas import (
     ScanRequest, ScanResponse, ScanData, Flag, Severity,
     RiskLevel, SafeBrowsingResult, ErrorResponse,
@@ -14,13 +17,39 @@ from app.services.summary_generator import generate_summary
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
+# --- In-memory TTL cache ---
+_scan_cache: dict[str, tuple[float, ScanResponse]] = {}
+_CACHE_TTL = 600  # 10 minutes
+
+limiter = Limiter(key_func=get_remote_address)
+
+
+def _get_cached(key: str) -> ScanResponse | None:
+    entry = _scan_cache.get(key)
+    if entry and (time.time() - entry[0]) < _CACHE_TTL:
+        return entry[1]
+    if entry:
+        del _scan_cache[key]
+    return None
+
+
+def _set_cache(key: str, value: ScanResponse) -> None:
+    # Evict old entries if cache is too large
+    if len(_scan_cache) > 500:
+        now = time.time()
+        expired = [k for k, (ts, _) in _scan_cache.items() if now - ts >= _CACHE_TTL]
+        for k in expired:
+            del _scan_cache[k]
+    _scan_cache[key] = (time.time(), value)
+
 
 @router.post(
     "/scan",
     response_model=ScanResponse,
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}}
 )
-async def scan_url(request: ScanRequest):
+@limiter.limit("30/minute")
+async def scan_url(request: ScanRequest, req: Request):
     """
     Scan a URL for security threats.
 
@@ -35,6 +64,11 @@ async def scan_url(request: ScanRequest):
 
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
+
+    # Check cache
+    cached = _get_cached(url)
+    if cached:
+        return cached
 
     try:
         all_flags: list[Flag] = []
@@ -163,7 +197,7 @@ async def scan_url(request: ScanRequest):
             for hop in redirect_chain
         ] if redirect_chain else None
 
-        return ScanResponse(
+        response = ScanResponse(
             status="success",
             data=ScanData(
                 original_url=request.url,
@@ -174,12 +208,18 @@ async def scan_url(request: ScanRequest):
                 info_requirement=info_requirement,
                 safe_browsing=SafeBrowsingResult(
                     is_safe=is_safe,
-                    threats=threats
+                    threats=threats,
+                    mock_mode=safe_browsing_service.is_mock_mode,
                 ),
                 domain_analysis=domain_analysis_data,
                 redirect_chain=redirect_chain_data
             )
         )
+
+        # Cache the response
+        _set_cache(url, response)
+
+        return response
 
     except Exception as e:
         raise HTTPException(

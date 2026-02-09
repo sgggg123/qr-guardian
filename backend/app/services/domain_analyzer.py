@@ -53,31 +53,54 @@ class DomainAnalyzer:
                     result["trust_score"], ssl_info, result["risk_factors"]
                 )
 
-        # Check domain age (via SSL cert creation date as proxy)
-        if result["ssl_info"] and result["ssl_info"].get("valid_from"):
+        # Check domain age via WHOIS (primary), fall back to SSL cert date
+        whois_age = self._get_whois_age(domain)
+        if whois_age is not None:
+            result["domain_age_days"] = whois_age
+        elif result["ssl_info"] and result["ssl_info"].get("valid_from"):
             try:
                 valid_from = datetime.fromisoformat(result["ssl_info"]["valid_from"])
-                age_days = (datetime.now() - valid_from).days
-                result["domain_age_days"] = age_days
-
-                if age_days < 30:
-                    result["risk_factors"].append({
-                        "type": "new_domain",
-                        "message": f"인증서가 최근 발급됨 ({age_days}일 전)",
-                        "severity": "warning"
-                    })
-                    result["trust_score"] -= 20
-                elif age_days < 90:
-                    result["risk_factors"].append({
-                        "type": "young_domain",
-                        "message": f"비교적 새로운 인증서 ({age_days}일)",
-                        "severity": "info"
-                    })
-                    result["trust_score"] -= 5
+                result["domain_age_days"] = (datetime.now() - valid_from).days
             except Exception:
                 pass
 
+        # Add risk factors based on domain age
+        age_days = result["domain_age_days"]
+        if age_days is not None:
+            if age_days < 30:
+                source = "WHOIS" if whois_age is not None else "인증서"
+                result["risk_factors"].append({
+                    "type": "new_domain",
+                    "message": f"최근 등록된 도메인입니다 ({age_days}일 전, {source} 기준)",
+                    "severity": "warning"
+                })
+                result["trust_score"] -= 20
+            elif age_days < 90:
+                result["risk_factors"].append({
+                    "type": "young_domain",
+                    "message": f"비교적 새로운 도메인입니다 ({age_days}일)",
+                    "severity": "info"
+                })
+                result["trust_score"] -= 5
+
         return result
+
+    def _get_whois_age(self, domain: str) -> Optional[int]:
+        """Get domain age in days via WHOIS lookup."""
+        try:
+            import whois
+            w = whois.whois(domain)
+            creation_date = w.creation_date
+            if creation_date is None:
+                return None
+            # Some WHOIS results return a list of dates
+            if isinstance(creation_date, list):
+                creation_date = creation_date[0]
+            if isinstance(creation_date, datetime):
+                return (datetime.now() - creation_date).days
+            return None
+        except Exception:
+            return None
 
     async def _get_ssl_info(self, domain: str) -> Optional[dict]:
         """Extract SSL certificate information."""

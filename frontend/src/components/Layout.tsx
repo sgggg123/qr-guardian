@@ -68,9 +68,9 @@ export default function Layout({ children }: LayoutProps) {
   ]
 
   return (
-    <div className="min-h-screen bg-slate-900 dark:bg-slate-900 light:bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex flex-col">
       {/* Header */}
-      <header className="bg-slate-800/50 dark:bg-slate-800/50 light:bg-white/80 backdrop-blur-sm border-b border-slate-700 dark:border-slate-700 light:border-gray-200 sticky top-0 z-50">
+      <header className="bg-white/80 dark:bg-slate-800/50 backdrop-blur-sm border-b border-gray-200 dark:border-slate-700 sticky top-0 z-50">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-center">
           <Link to="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -88,7 +88,7 @@ export default function Layout({ children }: LayoutProps) {
                 />
               </svg>
             </div>
-            <span className="text-lg font-semibold text-white dark:text-white light:text-gray-900">
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">
               QR Guardian
             </span>
           </Link>
@@ -101,7 +101,7 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-800/95 dark:bg-slate-800/95 light:bg-white/95 backdrop-blur-sm border-t border-slate-700 dark:border-slate-700 light:border-gray-200 z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm border-t border-gray-200 dark:border-slate-700 z-50">
         <div className="max-w-lg mx-auto px-4">
           <div className="flex items-center justify-around py-2">
             {navItems.map((item) => {
@@ -112,8 +112,8 @@ export default function Layout({ children }: LayoutProps) {
                   to={item.path}
                   className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-colors ${
                     isActive
-                      ? 'text-primary-400'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'text-primary-500'
+                      : 'text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-slate-200'
                   }`}
                 >
                   <svg

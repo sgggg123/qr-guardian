@@ -16,6 +16,7 @@ export interface InfoRequirement {
 export interface SafeBrowsingResult {
   is_safe: boolean
   threats: string[]
+  mock_mode?: boolean
 }
 
 export interface SSLInfo {

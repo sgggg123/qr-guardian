@@ -28,12 +28,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest
 
       - name: Check Python syntax
         run: python -m py_compile app/main.py app/core/config.py
 
       - name: Test imports
         run: python -c "from app.main import app; print('Backend imports OK')"
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
 
   frontend:
     name: Frontend Build
@@ -56,6 +60,9 @@ jobs:
         run: npm ci
 
       - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
         run: npm run build
         env:
           VITE_API_URL: http://localhost:8000

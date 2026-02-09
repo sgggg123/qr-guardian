@@ -9,6 +9,11 @@ class SafeBrowsingService:
     Falls back to mock data when API key is not configured.
     """
 
+    @property
+    def is_mock_mode(self) -> bool:
+        """True when Safe Browsing API key is not configured."""
+        return not bool(self.api_key)
+
     def __init__(self):
         self.api_key = settings.GOOGLE_SAFE_BROWSING_API_KEY
         self.api_url = "https://safebrowsing.googleapis.com/v4/threatMatches:find"

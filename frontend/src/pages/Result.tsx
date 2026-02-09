@@ -69,12 +69,12 @@ export default function Result() {
       )}
 
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white mb-4">분석 결과</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">분석 결과</h1>
         <TrafficLight level={scanData.risk_level} size="lg" />
 
         {scanData.summary && (
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 mt-4">
-            <p className="text-sm text-slate-200 leading-relaxed">
+          <div className="bg-white/80 dark:bg-slate-800/50 rounded-xl p-4 border border-gray-200 dark:border-slate-700 mt-4">
+            <p className="text-sm text-gray-700 dark:text-slate-200 leading-relaxed">
               {scanData.summary}
             </p>
           </div>
@@ -118,7 +118,7 @@ export default function Result() {
         ) : (
           <button
             onClick={handleOpenUrl}
-            className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+            className="w-full py-4 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -135,7 +135,7 @@ export default function Result() {
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={handleCopyUrl}
-            className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -150,7 +150,7 @@ export default function Result() {
 
           <button
             onClick={handleShare}
-            className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+            className="py-3 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 border border-gray-200 dark:border-slate-700 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -166,7 +166,7 @@ export default function Result() {
 
         <Link
           to="/"
-          className="w-full py-3 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+          className="w-full py-3 border border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path

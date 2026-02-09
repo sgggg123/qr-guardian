@@ -39,6 +39,7 @@ class InfoRequirement(BaseModel):
 class SafeBrowsingResult(BaseModel):
     is_safe: bool
     threats: List[str]
+    mock_mode: bool = False
 
 
 class SSLInfo(BaseModel):
