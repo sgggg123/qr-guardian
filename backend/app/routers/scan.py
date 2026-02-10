@@ -1,9 +1,8 @@
 import time
 from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from app.core.logging import get_logger
+from app.core.rate_limiter import limiter
 
 logger = get_logger("scan")
 from app.models.schemas import (
@@ -23,8 +22,6 @@ router = APIRouter(prefix="/api", tags=["scan"])
 # --- In-memory TTL cache ---
 _scan_cache: dict[str, tuple[float, ScanResponse]] = {}
 _CACHE_TTL = 600  # 10 minutes
-
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _get_cached(key: str) -> ScanResponse | None:
@@ -52,14 +49,14 @@ def _set_cache(key: str, value: ScanResponse) -> None:
     responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}}
 )
 @limiter.limit("30/minute")
-async def scan_url(request: ScanRequest, req: Request):
+async def scan_url(scan_request: ScanRequest, request: Request):
     """
     Scan a URL for security threats.
 
     Analyzes the URL structure, follows redirects, checks against
     threat databases, and returns a risk assessment.
     """
-    url = request.url.strip()
+    url = scan_request.url.strip()
 
     # Basic URL validation
     if not url:
@@ -206,7 +203,7 @@ async def scan_url(request: ScanRequest, req: Request):
         response = ScanResponse(
             status="success",
             data=ScanData(
-                original_url=request.url,
+                original_url=scan_request.url,
                 final_url=final_url,
                 risk_level=risk_level,
                 summary=summary,

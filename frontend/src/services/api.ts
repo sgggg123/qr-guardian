@@ -51,7 +51,7 @@ export async function bulkScanUrls(urls: string[]): Promise<BulkScanResponse> {
   return response.json()
 }
 
-export async function reportUrl(url: string, reason: string = ''): Promise<{ status: string; message: string }> {
+export async function reportUrl(url: string, reason: string = ''): Promise<{ status: string; message: string; report_count?: number; total_reports?: number }> {
   const response = await fetch(`${API_BASE}/api/report`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

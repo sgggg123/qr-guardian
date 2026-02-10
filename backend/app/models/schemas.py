@@ -119,3 +119,5 @@ class ReportRequest(BaseModel):
 class ReportResponse(BaseModel):
     status: str
     message: str
+    report_count: int = 0
+    total_reports: int = 0

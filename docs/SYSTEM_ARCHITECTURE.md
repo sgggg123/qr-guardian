@@ -1,6 +1,6 @@
 # QR Guardian - 시스템 전체 설명서
 
-> 최종 업데이트: 2026-02-06
+> 최종 업데이트: 2026-02-09
 
 ## 목차
 
@@ -75,6 +75,8 @@
 | FastAPI | Python 비동기 웹 프레임워크 |
 | Pydantic v2 | 요청/응답 데이터 검증 |
 | httpx | 비동기 HTTP 클라이언트 (리다이렉트 추적, 콘텐츠 분석) |
+| slowapi | IP 기반 Rate Limiting |
+| python-whois | WHOIS 도메인 등록일 조회 |
 | uvicorn | ASGI 서버 |
 | pytest | 테스트 프레임워크 |
 
@@ -84,6 +86,7 @@
 |------|------|
 | Railway | 클라우드 호스팅 (Backend + Frontend 각각 서비스) |
 | Docker | 컨테이너화 |
+| GitHub Actions | CI/CD (pytest + tsc --noEmit) |
 | GitHub | 소스 코드 + main 브랜치 push 시 자동 배포 |
 
 ---
@@ -118,8 +121,15 @@
 │    ├─ url_analyzer      단축URL 판별, 리다이렉트 추적  │
 │    ├─ threat_detector   URL 구조 분석, 콘텐츠 분석     │
 │    ├─ safe_browsing     Google Safe Browsing API     │
-│    ├─ domain_analyzer   SSL 인증서, 도메인 나이        │
+│    ├─ domain_analyzer   SSL 인증서, WHOIS 도메인 나이  │
 │    └─ summary_generator 자연어 요약 생성              │
+│                                                     │
+│  bulk.py   (벌크 스캔 - 최대 20개 URL 병렬 검사)       │
+│  report.py (URL 신고 접수 + 통계)                     │
+│                                                     │
+│  Rate Limiting: slowapi (IP당 요청 제한)              │
+│  Caching: 인메모리 TTL 캐시 (10분)                    │
+│  Logging: 구조화된 JSON 로그                          │
 │                                                     │
 │  config.py (설정)                                    │
 │    ├─ TRUSTED_DOMAINS   신뢰 도메인 화이트리스트       │
@@ -140,28 +150,33 @@ qr/
 │
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI 앱 진입점, CORS, 라우터 등록
+│   │   ├── main.py              # FastAPI 앱 진입점, CORS, Rate Limiting, 라우터 등록
 │   │   ├── core/
-│   │   │   └── config.py        # 환경변수, 화이트리스트, 브랜드 목록 등 설정
+│   │   │   ├── config.py        # 환경변수, 화이트리스트, 브랜드 목록 등 설정
+│   │   │   └── logging.py       # 구조화된 JSON 로깅 설정
 │   │   ├── routers/
-│   │   │   └── scan.py          # POST /api/scan 엔드포인트 (파이프라인 오케스트레이터)
+│   │   │   ├── scan.py          # POST /api/scan (파이프라인 오케스트레이터 + 캐시)
+│   │   │   ├── bulk.py          # POST /api/bulk-scan (벌크 스캔)
+│   │   │   └── report.py        # POST /api/report + GET /api/reports/stats
 │   │   ├── services/
 │   │   │   ├── url_analyzer.py      # 단축URL 판별, 리다이렉트 체인 추적
 │   │   │   ├── threat_detector.py   # URL 구조 분석, 타이포스쿼팅, 콘텐츠 분석
 │   │   │   ├── safe_browsing.py     # Google Safe Browsing API 연동
-│   │   │   ├── domain_analyzer.py   # SSL 인증서 분석, 도메인 나이, 신뢰 점수
+│   │   │   ├── domain_analyzer.py   # SSL 인증서(비동기), WHOIS, 신뢰 점수
 │   │   │   └── summary_generator.py # 자연어 요약 생성 (템플릿 기반)
 │   │   └── models/
-│   │       └── schemas.py       # Pydantic 모델 (ScanRequest, ScanData, Flag 등)
+│   │       └── schemas.py       # Pydantic 모델 (ScanRequest, ScanData, BulkScan 등)
 │   ├── tests/
-│   │   └── test_summary_generator.py  # 요약 생성기 regression 테스트
+│   │   ├── test_summary_generator.py  # 요약 생성기 regression 테스트 (11건)
+│   │   ├── test_scan_api.py           # API 통합 테스트 (12건)
+│   │   └── test_threat_detector.py    # 위협 탐지 단위 테스트 (26건)
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── railway.json
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx              # 라우팅 설정 (/, /result, /history, /settings, /generate)
+│   │   ├── App.tsx              # 라우팅 설정 (/, /result, /history, /settings, /generate, /bulk)
 │   │   ├── main.tsx             # React 렌더링 시작점
 │   │   ├── index.css            # 전역 스타일 (TailwindCSS)
 │   │   ├── components/
@@ -170,14 +185,15 @@ qr/
 │   │   │   ├── TrafficLight.tsx # 신호등 위험도 표시 (GREEN/YELLOW/RED)
 │   │   │   └── ResultCard.tsx   # 결과 카드 컴포넌트 모음 (6개 export)
 │   │   ├── pages/
-│   │   │   ├── Home.tsx         # 메인 페이지 (QR 스캔 + URL 입력)
-│   │   │   ├── Result.tsx       # 분석 결과 페이지 (신호등, 요약, 상세 카드들)
-│   │   │   ├── History.tsx      # 스캔 기록 + 통계
+│   │   │   ├── Home.tsx         # 메인 페이지 (QR 스캔 + URL 입력 + 스켈레톤 로딩)
+│   │   │   ├── Result.tsx       # 분석 결과 (신호등, 요약, 스크린샷, 신고)
+│   │   │   ├── History.tsx      # 스캔 기록 + 통계 (클릭 시 상세 재열람)
 │   │   │   ├── Settings.tsx     # 테마, 효과음, 진동 설정
-│   │   │   └── Generate.tsx     # QR 코드 생성기
+│   │   │   ├── Generate.tsx     # QR 코드 생성기
+│   │   │   └── BulkScan.tsx     # 벌크 URL 검사 (최대 20개)
 │   │   ├── services/
-│   │   │   ├── api.ts           # Backend API 호출 (scanUrl, healthCheck)
-│   │   │   ├── scanHistory.ts   # localStorage 기반 스캔 히스토리 관리
+│   │   │   ├── api.ts           # Backend API (scanUrl, bulkScanUrls, reportUrl, healthCheck)
+│   │   │   ├── scanHistory.ts   # localStorage 히스토리 (최근 20건 ScanData 포함)
 │   │   │   ├── notifications.ts # Web Audio API 효과음 + 진동
 │   │   │   └── share.ts        # 결과 공유 (Web Share API + 클립보드)
 │   │   ├── contexts/
@@ -200,9 +216,11 @@ qr/
 
 ### 5.1 `main.py` — 앱 진입점
 
-- FastAPI 인스턴스 생성 (API 문서: `/api/docs`, `/api/redoc`)
-- CORS 미들웨어 등록 (Frontend에서 접근 허용)
-- `scan.router` 등록
+- FastAPI 인스턴스 생성 (API 문서: 개발 환경에서만 활성화)
+- CORS 미들웨어 등록 (config 기반 origin 제한 + regex)
+- slowapi Rate Limiting (429 핸들러 포함)
+- 구조화된 JSON 로깅 초기화
+- `scan.router`, `bulk.router`, `report.router` 등록
 - `GET /health` 헬스체크 엔드포인트
 
 ### 5.2 `core/config.py` — 설정
@@ -288,9 +306,9 @@ POST /api/scan 요청 수신
 
 | 기능 | 설명 |
 |------|------|
-| SSL 인증서 추출 | 발급기관, 유효기간, 만료 여부 |
+| SSL 인증서 추출 | 비동기 `asyncio.open_connection` 기반. 발급기관, 유효기간, 만료 여부 |
 | 발급기관 신뢰도 평가 | DigiCert(100), GlobalSign(100), Let's Encrypt(60) 등 |
-| 도메인 나이 추정 | 인증서 발급일 기준 |
+| 도메인 나이 조회 | python-whois로 실제 등록일 조회, 실패 시 SSL 발급일 fallback |
 | 종합 신뢰 점수 | 100점 기준 감점 방식 (0~100점) |
 
 ### 5.8 `services/summary_generator.py` — 자연어 요약
@@ -322,10 +340,11 @@ POST /api/scan 요청 수신
 | 경로 | 페이지 | 설명 |
 |------|--------|------|
 | `/` | `Home.tsx` | 메인 - QR 스캔 + URL 입력 |
-| `/result` | `Result.tsx` | 분석 결과 표시 |
-| `/history` | `History.tsx` | 스캔 기록 + 통계 |
+| `/result` | `Result.tsx` | 분석 결과 (스크린샷, 신고 포함) |
+| `/history` | `History.tsx` | 스캔 기록 + 통계 (클릭 시 상세 재열람) |
 | `/settings` | `Settings.tsx` | 테마, 효과음, 진동 설정 |
 | `/generate` | `Generate.tsx` | QR 코드 생성기 |
+| `/bulk` | `BulkScan.tsx` | 벌크 URL 일괄 검사 (최대 20개) |
 
 하단 네비게이션 바에 스캔, 생성, 기록, 설정 4개 탭이 항상 표시됩니다.
 
@@ -362,7 +381,7 @@ POST /api/scan 요청 수신
 1. QR 스캐너 표시
 2. "또는 직접 입력" 구분선
 3. URL 입력 폼 + "URL 검사" 버튼
-4. 분석 중 로딩 오버레이 (스피너)
+4. 분석 중 스켈레톤 로딩 오버레이 (신호등 + 카드 placeholder)
 5. 스캔 완료 → `navigate('/result', { state: { scanData } })`
 6. 스캔 기록 자동 저장 (`addScanToHistory`)
 7. 위험도별 알림음/진동 재생 (`notifyRiskLevel`)
@@ -377,11 +396,13 @@ POST /api/scan 요청 수신
 6. Safe Browsing 결과 (`SafeBrowsingCard`)
 7. 도메인 분석 (`DomainAnalysisCard`)
 8. 리다이렉트 경로 (`RedirectChainCard`)
-9. 버튼: URL 열기 / URL 복사 / 결과 공유 / 다시 스캔
+9. 사이트 스크린샷 미리보기 (thum.io)
+10. 버튼: URL 열기 / URL 복사 / 결과 공유 / URL 신고 / 다시 스캔
 
 #### `History.tsx` — 스캔 기록
-- localStorage에 최대 50건 저장
+- localStorage에 최대 50건 저장 (최근 20건은 전체 ScanData 포함)
 - 통계: 전체/오늘/이번 주 스캔 수, 안전/주의/위험 비율 바
+- 항목 클릭 → Result 페이지에서 상세 결과 재열람
 - 개별 삭제 + 전체 삭제
 
 #### `Settings.tsx` — 설정
@@ -398,14 +419,17 @@ POST /api/scan 요청 수신
 
 #### `api.ts`
 ```typescript
-scanUrl(url: string): Promise<ScanResponse>   // POST /api/scan
-healthCheck(): Promise<boolean>                 // GET /health
+scanUrl(url: string): Promise<ScanResponse>          // POST /api/scan
+bulkScanUrls(urls: string[]): Promise<BulkScanResponse>  // POST /api/bulk-scan
+reportUrl(url: string, reason?: string): Promise<...>     // POST /api/report
+getScreenshotUrl(url: string): string                     // thum.io 미리보기 URL
+healthCheck(): Promise<boolean>                            // GET /health
 ```
 - `VITE_API_URL` 환경변수 또는 프로덕션 Railway URL 사용
 
 #### `scanHistory.ts`
 - localStorage 키: `qr-guardian-history`
-- 최대 50건 (FIFO)
+- 최대 50건 (FIFO), 최근 20건은 전체 `ScanData` 포함 (상세 재열람용)
 - `addScanToHistory()`, `getScanHistory()`, `clearScanHistory()`, `deleteScanItem()`, `getScanStats()`
 
 #### `notifications.ts`
@@ -575,6 +599,49 @@ URL을 분석합니다.
 ```json
 { "status": "healthy", "service": "qr-guardian-api" }
 ```
+
+### `POST /api/bulk-scan`
+
+여러 URL을 한꺼번에 분석합니다 (최대 20개). Rate limit: 5회/분.
+
+**요청:**
+```json
+{
+  "urls": ["https://google.com", "https://navar.com"]
+}
+```
+
+**응답:**
+```json
+{
+  "status": "success",
+  "results": [
+    { "url": "https://google.com", "risk_level": "GREEN", "summary": "Google 공식 사이트입니다." },
+    { "url": "https://navar.com", "risk_level": "RED", "summary": "...", "error": null }
+  ]
+}
+```
+
+### `POST /api/report`
+
+URL을 신고합니다. Rate limit: 10회/분.
+
+**요청:**
+```json
+{
+  "url": "https://suspicious-site.com",
+  "reason": "피싱 의심"
+}
+```
+
+**응답:**
+```json
+{ "status": "success", "message": "신고가 접수되었습니다" }
+```
+
+### `GET /api/reports/stats`
+
+신고 통계를 조회합니다.
 
 ### `GET /`
 
@@ -818,12 +885,10 @@ source venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-현재 테스트:
-- `tests/test_summary_generator.py` — 요약 생성기 11개 테스트 케이스
-  - GREEN (trusted / untrusted)
-  - YELLOW (단축URL + 새도메인, 단축URL + 크로스도메인)
-  - RED (타이포스쿼팅, Safe Browsing, 피싱 패턴, 만료 인증서)
-  - 조합 (new_domain + low_trust_issuer, IP 주소)
+현재 테스트 (총 49건):
+- `tests/test_summary_generator.py` — 요약 생성기 11개 테스트
+- `tests/test_scan_api.py` — API 통합 테스트 12개 (TestClient 기반)
+- `tests/test_threat_detector.py` — 위협 탐지 단위 테스트 26개
 
 ### Frontend 타입 체크
 

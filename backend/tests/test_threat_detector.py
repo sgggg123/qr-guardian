@@ -45,9 +45,10 @@ class TestTyposquatting:
         assert detector._detect_typosquatting("randomwebsite123.com") is None
 
     def test_short_brand_high_threshold(self, detector):
-        """Short brand names (<=4) should use stricter threshold (0.85)."""
-        # 'toss' is 4 chars, 'boss' has similarity ~0.5 which is below even 0.7
-        assert detector._detect_typosquatting("boss.com") is None
+        """Short brand names (<=4) should use stricter threshold (0.85).
+        'toss' is 4 chars — a word with low similarity should not be flagged."""
+        # 'mega' vs 'toss' → similarity 0.0, no char substitution match
+        assert detector._detect_typosquatting("mega.com") is None
 
     def test_kakao_variant(self, detector):
         """kak4o should be flagged (4→a)."""

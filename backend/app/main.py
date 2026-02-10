@@ -2,11 +2,10 @@ import re
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
+from app.core.rate_limiter import limiter
 from app.routers import scan, report, bulk
 
 is_production = settings.ENVIRONMENT == "production"
@@ -14,9 +13,6 @@ is_production = settings.ENVIRONMENT == "production"
 # Initialize structured logging
 setup_logging(level="INFO" if is_production else "DEBUG")
 logger = get_logger("main")
-
-# Rate limiter: IP-based, 30 requests/minute
-limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 
 app = FastAPI(
     title="QR Guardian API",

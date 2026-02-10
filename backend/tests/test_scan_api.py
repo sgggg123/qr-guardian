@@ -9,6 +9,13 @@ from app.main import app
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def clear_scan_cache():
+    """Clear the in-memory scan cache before each test."""
+    from app.routers.scan import _scan_cache
+    _scan_cache.clear()
+
+
 class TestScanEndpoint:
     """Tests for POST /api/scan"""
 

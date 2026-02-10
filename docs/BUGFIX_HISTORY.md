@@ -1,190 +1,98 @@
 # 주요 변경 기록
 
-> 커밋 `9cb5944`, `3eb0357`, `9fac138` 에서 수정/추가한 핵심 변경사항
-
 ---
 
-## 1. 신뢰 도메인 오탐지 (toss.im, google.com 등이 YELLOW/RED로 뜨던 문제)
+## 5. P0/P1 보안·성능·UX 개선 (`4054f70`)
 
-### 증상
+### 변경 내용
 
-google.com, toss.im 같은 대형 사이트를 스캔하면 안전(GREEN)이 아니라 주의(YELLOW)나 위험(RED)이 나옴.
+**보안 (P0)**
+- CORS `allow_origins=["*"]` 제거 → `config.py`의 `BACKEND_CORS_ORIGINS` 기반으로 변경. 와일드카드 패턴(`*.railway.app`)은 `allow_origin_regex`로 처리
+- 프로덕션 환경에서 API 문서(`/api/docs`, `/api/redoc`) 비활성화
 
-### 원인 3가지
+**보안 (P1)**
+- slowapi 기반 IP당 Rate Limiting 추가 (스캔 30회/분)
+- 429 Too Many Requests 핸들러 등록
 
-**① 결제 폼 오탐**
+**탐지 정확도 (P1)**
+- `python-whois`로 실제 WHOIS 도메인 등록일 조회. 실패 시 SSL 인증서 발급일로 fallback
+- Safe Browsing Mock 모드 시 `mock_mode: true` 반환 + 프론트엔드에 "Safe Browsing API 미연동" 경고 배너
 
-```python
-# 기존: "card"만 포함되면 결제 폼으로 탐지
-r'card.*number'
-r'credit.*card'
-```
+**성능 (P1)**
+- `final_url` 기준 인메모리 TTL 캐시 (10분, 최대 500건). 동일 URL 재스캔 시 캐시 반환
 
-HTML `<meta name="twitter:card" ...>` 태그에 "card"가 포함되어, 거의 모든 사이트가 "결제 정보 요청" 플래그를 받음.
+**UX (P1)**
+- 히스토리 항목 클릭 → Result 페이지로 이동 (최근 20건은 전체 ScanData 저장)
+- 전체 컴포넌트 라이트 모드 완성 (`tailwind.config.js`에 `darkMode: 'class'` 설정)
 
-**② 신뢰 도메인에 SSL/도메인 경고가 붙음**
-
-Let's Encrypt 인증서를 쓰는 신뢰 도메인(예: toss.im)에 `low_trust_issuer` 경고가 붙어서 YELLOW로 판정됨.
-
-**③ 신뢰 도메인인데도 개인정보/결제 플래그가 WARNING**
-
-네이버, 쿠팡 같은 사이트도 로그인/결제 폼이 있으니 WARNING 플래그 → 위험도 상승.
-
-### 수정 내용
-
-**① 결제 폼 패턴을 `<input>` 태그 안에 있는 것만 탐지하도록 변경**
-
-```python
-# 수정 후: HTML input 필드 안에 있는 경우만 탐지
-r'<input[^>]*card[^>]*number'
-r'name=["\']?card'
-r'placeholder=["\']?카드'
-```
-
-→ `twitter:card` 메타태그는 더 이상 매칭되지 않음
-
-**② 신뢰 도메인이면 SSL/도메인 risk factor 플래그를 안 붙임**
-
-```python
-# scan.py
-is_trusted = _is_trusted_domain(final_url)
-if not is_trusted:  # ← 신뢰 도메인이면 skip
-    for factor in domain_result.get("risk_factors", []):
-        all_flags.append(...)
-```
-
-**③ 신뢰 도메인의 개인정보/결제 플래그를 INFO로 다운그레이드**
-
-```python
-# threat_detector.py
-severity=Severity.INFO if is_trusted else Severity.WARNING
-message="결제 기능이 있는 페이지입니다" if is_trusted else "결제 정보 입력을 요청하는 페이지입니다"
-```
-
-INFO 플래그는 위험도 계산에 영향을 주지 않음 → 신뢰 도메인은 GREEN 유지.
+**테스트·인프라 (P1)**
+- `test_scan_api.py` — FastAPI TestClient 기반 통합 테스트 12건
+- `.github/workflows/ci.yml` — pytest + tsc --noEmit 자동화
 
 ### 수정 파일
 
-- `backend/app/routers/scan.py` — 신뢰 도메인 SSL 플래그 제외
-- `backend/app/services/threat_detector.py` — 결제 폼 패턴 수정, 신뢰 도메인 INFO 다운그레이드
+| 파일 | 변경 |
+|------|------|
+| `backend/app/main.py` | CORS 제한, API 문서 비활성화, Rate Limiting, 라우터 등록 |
+| `backend/app/routers/scan.py` | 캐시, Rate Limiting, mock_mode 반환, 로깅 |
+| `backend/app/services/domain_analyzer.py` | WHOIS 도메인 나이 조회 |
+| `backend/app/services/safe_browsing.py` | `is_mock_mode` 프로퍼티 |
+| `backend/app/models/schemas.py` | `mock_mode` 필드, 벌크/신고 스키마 |
+| `backend/requirements.txt` | slowapi, python-whois 추가 |
+| `frontend/tailwind.config.js` | `darkMode: 'class'` |
+| `frontend/src/components/*.tsx` | 라이트 모드 스타일 |
+| `frontend/src/pages/*.tsx` | 라이트 모드 + 히스토리 상세보기 |
+| `frontend/src/services/scanHistory.ts` | ScanData 전체 저장 |
+| `frontend/src/types/index.ts` | `mock_mode` 타입 |
+| `.github/workflows/ci.yml` | **(신규)** CI 파이프라인 |
+| `backend/tests/test_scan_api.py` | **(신규)** API 통합 테스트 |
 
 ---
 
-## 2. 타이포스쿼팅 탐지 버그 (문자 치환이 양방향이라 정상 도메인도 탐지되던 문제)
+## 6. P2 전체 개선 (`2e104cd`)
 
-### 증상
+### 변경 내용
 
-정상적인 도메인인데도 타이포스쿼팅(사칭)으로 오탐되거나, 반대로 실제 사칭 도메인을 놓치는 경우 발생.
+**탐지 정확도**
+- 타이포스쿼팅: 브랜드 4자 이하일 때 유사도 기준 0.7 → 0.85로 상향하여 오탐 감소
+- 한국어 피싱 패턴 25종 추가 (택배 사칭, 정부기관 사칭, 금융 사칭, 경조사 사칭 등)
 
-### 원인
+**성능**
+- SSL 분석을 동기 `socket.create_connection` → 비동기 `asyncio.open_connection`으로 변환
 
-```python
-# 기존: 양방향 매핑 (문제!)
-substitutions = {
-    'o': '0', '0': 'o',   # o→0 도 매핑, 0→o 도 매핑
-    'l': '1', '1': 'l',
-    ...
-}
-```
+**UX**
+- 스캔 중 스켈레톤 로딩 UI (신호등 + 요약 + 카드 placeholder 깜빡임)
+- 공유 텍스트에 자연어 요약(`summary`) 포함
+- Result 페이지에 사이트 스크린샷 미리보기 (thum.io 외부 API)
+- Result 페이지에 URL 신고 버튼
 
-양방향이면 `google` → `g00gle` 을 잡지만, 정상 도메인도 브랜드와 "치환하면 비슷하다"로 잘못 판정될 수 있음. 또한 문자 1개만 다른 경우만 잡아서, `g00gle` (2글자 다름) 같은 사칭을 놓침.
+**기능 추가**
+- 벌크 스캔: `POST /api/bulk-scan` + `/bulk` 페이지 (최대 20개 URL, `asyncio.gather` 병렬 처리)
+- URL 신고: `POST /api/report` + `GET /api/reports/stats` (인메모리 저장, 최대 1000건)
 
-### 수정 내용
+**테스트**
+- `test_threat_detector.py` — 타이포스쿼팅, 피싱 패턴 등 26건 단위 테스트
 
-**① 단방향 char_map으로 변경 (가짜 → 진짜)**
+**인프라**
+- 구조화된 JSON 로깅 시스템 (`app/core/logging.py`)
+- 스캔 소요 시간 로그 기록
 
-```python
-# 수정 후: 가짜 문자를 진짜 문자로 정규화
-char_map = {
-    '0': 'o',   # 숫자 0 → 영문 o
-    '1': 'l',   # 숫자 1 → 영문 l
-    '3': 'e',   # 숫자 3 → 영문 e
-    '$': 's',   # 달러 → s
-    '@': 'a',   # 골뱅이 → a
-    'rn': 'm',  # rn → m (모양이 비슷)
-    'vv': 'w',  # vv → w
-    ...
-}
-```
+### 수정/추가 파일
 
-**② normalize 함수 도입**
-
-도메인과 브랜드 이름 모두 정규화한 뒤 비교:
-
-```python
-def normalize(text):
-    result = text.lower()
-    result = result.replace('rn', 'm').replace('vv', 'w')
-    for fake, real in char_map.items():
-        if len(fake) == 1:
-            result = result.replace(fake, real)
-    return result
-```
-
-- `g00gle` → normalize → `google` → 브랜드와 일치 → 탐지!
-- `google` → normalize → `google` → 자기 자신과 일치 → 정상 (화이트리스트로 통과)
-
-**③ 문자 차이 허용을 1개 → 2개로 확대**
-
-```python
-# 정규화 후에도 문자 2개까지 차이나면 의심
-diff_count = sum(1 for a, b in zip(normalized_domain, normalized_brand) if a != b)
-if diff_count <= 2:
-    return True
-```
-
-### 수정 파일
-
-- `backend/app/services/threat_detector.py` → `_is_typosquat_variant()`
-
----
-
-## 3. 리다이렉트 시 원본 URL 타이포스쿼팅 검사 누락
-
-### 증상
-
-`naverr.com` → (리다이렉트) → `naver.com` 으로 연결되는 경우, 최종 URL인 `naver.com`만 검사하므로 타이포스쿼팅을 놓침.
-
-### 원인
-
-기존에는 `final_url`에 대해서만 `analyze_url_structure()`를 호출:
-
-```python
-# 기존: final_url만 검사
-structure_flags = threat_detector.analyze_url_structure(final_url, domain_info)
-```
-
-사칭 도메인이 진짜 사이트로 리다이렉트하는 경우 (피싱의 흔한 수법), 최종 URL은 정상이라 탐지 실패.
-
-### 수정 내용
-
-원본 URL과 최종 URL이 다른 경우, 원본 URL에 대해서도 타이포스쿼팅 검사를 추가:
-
-```python
-# scan.py
-if url != final_url:
-    original_domain_info = url_analyzer.extract_domain_info(url)
-    original_flags = threat_detector.analyze_url_structure(url, original_domain_info)
-    for flag in original_flags:
-        if flag.type == "typosquatting" and flag.type not in [f.type for f in all_flags]:
-            all_flags.append(flag)
-```
-
-또한 `analyze_url_structure()`에서 신뢰 도메인이면 바로 빈 리스트를 반환하도록 하여, 정상 도메인에 대한 불필요한 검사를 스킵:
-
-```python
-# threat_detector.py
-def analyze_url_structure(self, url, domain_info):
-    if self._is_trusted_domain(domain_info["domain"]):
-        return []  # 신뢰 도메인은 검사 불필요
-```
-
-### 수정 파일
-
-- `backend/app/routers/scan.py` — 원본 URL 타이포스쿼팅 추가 검사
-- `backend/app/services/threat_detector.py` — 신뢰 도메인 검사 스킵
-
----
+| 파일 | 변경 |
+|------|------|
+| `backend/app/services/threat_detector.py` | 적응형 유사도 기준, 한국어 피싱 패턴 |
+| `backend/app/services/domain_analyzer.py` | 비동기 SSL 분석 |
+| `backend/app/core/logging.py` | **(신규)** JSON 구조화 로깅 |
+| `backend/app/routers/bulk.py` | **(신규)** 벌크 스캔 API |
+| `backend/app/routers/report.py` | **(신규)** URL 신고 API |
+| `backend/tests/test_threat_detector.py` | **(신규)** 위협 탐지 테스트 |
+| `frontend/src/pages/BulkScan.tsx` | **(신규)** 벌크 스캔 페이지 |
+| `frontend/src/pages/Home.tsx` | 스켈레톤 로딩 |
+| `frontend/src/pages/Result.tsx` | 스크린샷 미리보기, 신고 버튼 |
+| `frontend/src/services/api.ts` | bulkScanUrls, reportUrl, getScreenshotUrl |
+| `frontend/src/services/share.ts` | 요약 포함 |
+| `frontend/src/App.tsx` | `/bulk` 라우트 추가 |
 
 ---
 
@@ -200,52 +108,74 @@ def analyze_url_structure(self, url, domain_info):
 
 기존 `_calculate_risk_level()` 및 파이프라인은 **일체 수정하지 않고**, 파이프라인 마지막에 요약 생성 단계만 추가.
 
-### 생성 방식 (3단계 템플릿)
-
-```
-1단계: 판정문 (risk_level 기반)
-   "이 사이트는 위험할 수 있습니다."
-
-2단계: 위협 상세 (flag 조합 기반)
-   "'naver'을(를) 사칭하는 것으로 의심됩니다."
-
-3단계: 행동 가이드
-   "절대 로그인하거나 개인정보를 입력하지 마세요."
-```
-
-→ 3개를 합쳐서 자연스러운 문단으로 출력
-
 ### 실제 출력 예시
 
 | 시나리오 | 요약 |
 |----------|------|
-| google.com (GREEN, trusted) | "Google 공식 사이트입니다. 안심하고 이용하셔도 됩니다. 정상적으로 이용 가능합니다." |
-| navar.com (RED, typosquatting) | "이 사이트는 위험할 수 있습니다. 'naver'을(를) 사칭하는 것으로 의심됩니다. 절대 로그인하거나 개인정보를 입력하지 마세요." |
-| bit.ly → figma.com (GREEN) | "Figma 공식 사이트입니다. 안심하고 이용하셔도 됩니다. 단축 URL로 실제 목적지가 숨겨져 있습니다. 정상적으로 이용 가능합니다." |
+| google.com (GREEN, trusted) | "Google 공식 사이트입니다. 안심하고 이용하셔도 됩니다." |
+| navar.com (RED, typosquatting) | "이 사이트는 위험할 수 있습니다. 'naver'을(를) 사칭하는 것으로 의심됩니다." |
+| bit.ly → figma.com (GREEN) | "Figma 공식 사이트입니다. 단축 URL로 실제 목적지가 숨겨져 있습니다." |
 
 ### 변경 파일
 
-**Backend:**
-- `backend/app/services/summary_generator.py` **(신규)** — 템플릿 기반 요약 생성
+- `backend/app/services/summary_generator.py` **(신규)**
 - `backend/app/models/schemas.py` — `ScanData`에 `summary: str` 필드 추가
 - `backend/app/routers/scan.py` — `generate_summary()` 호출 추가
-- `backend/tests/test_summary_generator.py` **(신규)** — 11개 regression 테스트
-
-**Frontend:**
-- `frontend/src/types/index.ts` — `ScanData`에 `summary: string` 추가
-- `frontend/src/pages/Result.tsx` — TrafficLight 아래에 요약 카드 표시
-
-### 확장 가능성
-
-`generate_summary()` 함수의 입출력 인터페이스를 유지하면서 내부만 LLM API 호출로 교체하면, 나머지 코드 변경 없이 더 자연스러운 요약 생성 가능.
+- `backend/tests/test_summary_generator.py` **(신규)** — 11개 테스트
+- `frontend/src/types/index.ts` — `summary: string` 추가
+- `frontend/src/pages/Result.tsx` — 요약 카드 표시
 
 ---
 
-## 요약
+## 3. 리다이렉트 시 원본 URL 타이포스쿼팅 검사 누락 (`3eb0357`)
 
-| # | 변경 | 핵심 원인/목적 | 수정 방향 |
-|---|------|----------------|-----------|
-| 1 | 신뢰 도메인이 YELLOW/RED | `twitter:card` 오탐 + 신뢰 도메인에 SSL 경고 | 패턴 정밀화 + 신뢰 도메인 플래그 제외/다운그레이드 |
-| 2 | 타이포스쿼팅 오탐/미탐 | 양방향 char_map + 1글자 차이만 허용 | 단방향 normalize + 2글자까지 허용 |
-| 3 | 리다이렉트 시 사칭 못 잡음 | final_url만 검사 | 원본 URL도 타이포스쿼팅 검사 |
-| 4 | 자연어 요약 기능 추가 | 결과가 분산되어 직관적 파악 어려움 | 3단계 템플릿으로 2~3문장 요약 생성 |
+### 증상
+
+`naverr.com` → `naver.com` 리다이렉트 시 최종 URL만 검사하여 사칭을 놓침.
+
+### 수정
+
+원본 URL과 최종 URL이 다르면 원본에 대해서도 타이포스쿼팅 검사 추가.
+
+### 수정 파일
+
+- `backend/app/routers/scan.py`
+- `backend/app/services/threat_detector.py`
+
+---
+
+## 2. 타이포스쿼팅 탐지 버그 — 양방향 char_map (`3eb0357`)
+
+### 증상
+
+정상 도메인이 타이포스쿼팅으로 오탐되거나, 실제 사칭 도메인을 놓치는 문제.
+
+### 수정
+
+- 양방향 매핑 → 단방향 `normalize()` 함수 (가짜→진짜)
+- 문자 차이 허용: 1개 → 2개로 확대
+
+### 수정 파일
+
+- `backend/app/services/threat_detector.py`
+
+---
+
+## 1. 신뢰 도메인 오탐지 — toss.im, google.com 등이 YELLOW/RED (`9cb5944`)
+
+### 원인
+
+- `twitter:card` 메타태그가 결제 폼으로 오탐
+- 신뢰 도메인에 SSL/도메인 risk factor 플래그 부착
+- 신뢰 도메인의 로그인/결제 폼이 WARNING으로 위험도 상승
+
+### 수정
+
+- 결제 폼 패턴을 `<input>` 태그 내부만 탐지하도록 변경
+- 신뢰 도메인이면 SSL/도메인 risk factor 스킵
+- 신뢰 도메인의 개인정보/결제 플래그를 INFO로 다운그레이드
+
+### 수정 파일
+
+- `backend/app/routers/scan.py`
+- `backend/app/services/threat_detector.py`
