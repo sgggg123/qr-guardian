@@ -66,9 +66,8 @@ export async function reportUrl(url: string, reason: string = ''): Promise<{ sta
 }
 
 export function getScreenshotUrl(url: string): string {
-  // Use Google's free PageSpeed screenshot thumbnail
   const encoded = encodeURIComponent(url)
-  return `https://image.thum.io/get/width/600/crop/400/${encoded}`
+  return `https://api.microlink.io/?url=${encoded}&screenshot=true&meta=false&embed=screenshot.url`
 }
 
 export async function healthCheck(): Promise<boolean> {
