@@ -16,7 +16,6 @@ export interface InfoRequirement {
 export interface SafeBrowsingResult {
   is_safe: boolean
   threats: string[]
-  mock_mode?: boolean
 }
 
 export interface SSLInfo {
@@ -34,12 +33,20 @@ export interface RiskFactor {
   severity: 'danger' | 'warning' | 'info'
 }
 
+export interface RiskBreakdownItem {
+  factor: string
+  score: number
+  reason: string
+}
+
 export interface DomainAnalysis {
   domain: string
   ssl_info: SSLInfo | null
   domain_age_days: number | null
   trust_score: number
   risk_factors: RiskFactor[]
+  risk_score?: number
+  risk_breakdown?: RiskBreakdownItem[]
 }
 
 export interface RedirectHop {
@@ -58,6 +65,10 @@ export interface ScanData {
   safe_browsing: SafeBrowsingResult
   domain_analysis?: DomainAnalysis
   redirect_chain?: RedirectHop[]
+  risk_score?: number
+  risk_breakdown?: RiskBreakdownItem[]
+  ai_summary?: string
+  action_guidelines?: string[]
 }
 
 export interface ScanResponse {

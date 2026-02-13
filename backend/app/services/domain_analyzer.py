@@ -1,6 +1,8 @@
 """
 Domain age and SSL certificate analysis service.
 Provides additional risk signals based on domain characteristics.
+
+Risk scoring: 0.0 ~ 10.0 (higher = riskier)
 """
 import asyncio
 import ssl
@@ -9,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 import httpx
+from app.core.config import settings
 
 
 class DomainAnalyzer:
@@ -22,67 +25,160 @@ class DomainAnalyzer:
         "Sectigo": 95,
         "GoDaddy": 90,
         "Amazon": 90,
-        "Google Trust Services": 85,
-        "Cloudflare": 85,
-        "Let's Encrypt": 60,  # Free, commonly used by phishing
+        "Google Trust Services": 95,
+        "Cloudflare": 90,
+        "Microsoft": 90,
+        "IdenTrust": 85,
+        "Entrust": 90,
+        "Thawte": 85,
+        "GeoTrust": 85,
+        "Baltimore": 85,
+        "Let's Encrypt": 80,
+        "ZeroSSL": 70,
     }
+
+    def _is_trusted_domain(self, domain: str) -> bool:
+        """Check if domain is in the trusted list."""
+        clean = domain.lower()
+        if clean.startswith("www."):
+            clean = clean[4:]
+        for trusted in settings.TRUSTED_DOMAINS:
+            if clean == trusted or clean.endswith("." + trusted):
+                return True
+        return False
 
     async def analyze_domain(self, url: str) -> dict:
         """
         Comprehensive domain analysis.
-        Returns domain age, SSL info, and risk indicators.
+        Returns domain age, SSL info, risk indicators,
+        plus new risk_score (0-10) and risk_breakdown.
         """
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
         if domain.startswith("www."):
             domain = domain[4:]
 
+        is_trusted = self._is_trusted_domain(domain)
+
         result = {
             "domain": domain,
             "ssl_info": None,
             "domain_age_days": None,
             "risk_factors": [],
-            "trust_score": 100,  # Start at 100, subtract for risks
+            "trust_score": 100,  # Legacy: start at 100, subtract for risks
+            "risk_score": 0.0,   # New: 0-10, add for risks
+            "risk_breakdown": [],  # New: list of {"factor", "score", "reason"}
         }
 
-        # Analyze SSL certificate
+        # Trusted domains get score 0 immediately
+        if is_trusted:
+            result["risk_breakdown"].append({
+                "factor": "trusted_domain",
+                "score": 0.0,
+                "reason": "신뢰할 수 있는 도메인 목록에 등록된 사이트입니다",
+            })
+            # Still gather SSL info for display
+            if parsed.scheme == "https":
+                ssl_info = await self._get_ssl_info(domain)
+                if ssl_info:
+                    result["ssl_info"] = ssl_info
+            whois_age = self._get_whois_age(domain)
+            if whois_age is not None:
+                result["domain_age_days"] = whois_age
+            return result
+
+        # --- SSL analysis ---
+        ssl_risk = 0.0
+        ssl_reason = "정상 SSL 인증서"
+        whois_failed = False
+
         if parsed.scheme == "https":
             ssl_info = await self._get_ssl_info(domain)
             if ssl_info:
                 result["ssl_info"] = ssl_info
+                # Legacy scoring
                 result["trust_score"] = self._adjust_score_for_ssl(
                     result["trust_score"], ssl_info, result["risk_factors"]
                 )
+                # New risk scoring for SSL
+                if ssl_info.get("is_expired"):
+                    ssl_risk = 2.0
+                    ssl_reason = "SSL 인증서가 만료되었습니다"
+                elif ssl_info.get("trust_level") in ("low", "unknown"):
+                    ssl_risk = 2.0
+                    ssl_reason = f"저신뢰 인증서 발급기관: {ssl_info.get('issuer', 'Unknown')}"
+                elif ssl_info.get("days_until_expiry") and ssl_info["days_until_expiry"] < 30:
+                    ssl_risk = 1.0
+                    ssl_reason = f"인증서가 곧 만료됩니다 ({ssl_info['days_until_expiry']}일 후)"
+                else:
+                    ssl_risk = 0.0
+                    ssl_reason = "정상 SSL 인증서"
+        else:
+            # HTTP (no SSL)
+            ssl_risk = 3.0
+            ssl_reason = "HTTPS를 사용하지 않는 사이트입니다"
 
-        # Check domain age via WHOIS (primary), fall back to SSL cert date
+        result["risk_breakdown"].append({
+            "factor": "ssl",
+            "score": ssl_risk,
+            "reason": ssl_reason,
+        })
+
+        # --- WHOIS domain age ---
         whois_age = self._get_whois_age(domain)
+        age_risk = 0.0
+        age_reason = ""
+
         if whois_age is not None:
             result["domain_age_days"] = whois_age
-        elif result["ssl_info"] and result["ssl_info"].get("valid_from"):
-            try:
-                valid_from = datetime.fromisoformat(result["ssl_info"]["valid_from"])
-                result["domain_age_days"] = (datetime.now() - valid_from).days
-            except Exception:
-                pass
-
-        # Add risk factors based on domain age
-        age_days = result["domain_age_days"]
-        if age_days is not None:
-            if age_days < 30:
-                source = "WHOIS" if whois_age is not None else "인증서"
+            if whois_age < 30:
+                age_risk = 4.0
+                age_reason = f"최근 등록된 도메인입니다 ({whois_age}일 전)"
                 result["risk_factors"].append({
                     "type": "new_domain",
-                    "message": f"최근 등록된 도메인입니다 ({age_days}일 전, {source} 기준)",
+                    "message": f"최근 등록된 도메인입니다 ({whois_age}일 전, WHOIS 기준)",
                     "severity": "warning"
                 })
                 result["trust_score"] -= 20
-            elif age_days < 90:
+            elif whois_age < 90:
+                age_risk = 2.0
+                age_reason = f"비교적 새로운 도메인입니다 ({whois_age}일)"
                 result["risk_factors"].append({
                     "type": "young_domain",
-                    "message": f"비교적 새로운 도메인입니다 ({age_days}일)",
+                    "message": f"비교적 새로운 도메인입니다 ({whois_age}일)",
                     "severity": "info"
                 })
                 result["trust_score"] -= 5
+            elif whois_age < 365:
+                age_risk = 1.0
+                age_reason = f"1년 미만의 도메인입니다 ({whois_age}일)"
+            else:
+                age_risk = 0.0
+                age_reason = f"오래된 도메인입니다 ({whois_age}일)"
+        else:
+            # WHOIS lookup failed
+            whois_failed = True
+            age_reason = "WHOIS 조회 실패"
+
+        result["risk_breakdown"].append({
+            "factor": "domain_age",
+            "score": age_risk,
+            "reason": age_reason,
+        })
+
+        # --- WHOIS failure penalty ---
+        whois_fail_risk = 1.0 if whois_failed else 0.0
+        result["risk_breakdown"].append({
+            "factor": "whois_failure",
+            "score": whois_fail_risk,
+            "reason": "WHOIS 정보를 조회할 수 없습니다" if whois_failed else "WHOIS 조회 성공",
+        })
+
+        # Calculate total risk_score (sum of breakdown, capped at 10)
+        result["risk_score"] = min(
+            10.0,
+            round(sum(item["score"] for item in result["risk_breakdown"]), 1)
+        )
 
         return result
 
@@ -138,7 +234,7 @@ class DomainAnalyzer:
             except Exception:
                 pass
 
-            # Calculate trust level
+            # Calculate trust level based on issuer
             trust_level = "unknown"
             for issuer_name, score in self.TRUSTED_ISSUERS.items():
                 if issuer_name.lower() in issuer_org.lower():
@@ -165,7 +261,7 @@ class DomainAnalyzer:
     def _adjust_score_for_ssl(
         self, score: int, ssl_info: dict, risk_factors: list
     ) -> int:
-        """Adjust trust score based on SSL certificate characteristics."""
+        """Adjust trust score based on SSL certificate characteristics (legacy)."""
 
         # Check issuer trust level
         trust_level = ssl_info.get("trust_level", "unknown")

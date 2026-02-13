@@ -1,46 +1,35 @@
+import logging
 import httpx
 from typing import List, Tuple
 from app.core.config import settings
+
+logger = logging.getLogger("safe_browsing")
 
 
 class SafeBrowsingService:
     """
     Google Safe Browsing API integration.
-    Falls back to mock data when API key is not configured.
+    No mock mode — returns safe (True, []) when API key is missing or on failure.
     """
-
-    @property
-    def is_mock_mode(self) -> bool:
-        """True when Safe Browsing API key is not configured."""
-        return not bool(self.api_key)
 
     def __init__(self):
         self.api_key = settings.GOOGLE_SAFE_BROWSING_API_KEY
         self.api_url = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
-
-        # Mock dangerous URLs for testing (when API key is not set)
-        self.mock_dangerous_urls = [
-            "malware.testing.google.test",
-            "phishing.testing.google.test",
-            "example-phishing.com",
-            "fake-bank-login.com",
-            "steal-your-data.xyz",
-        ]
 
     async def check_url(self, url: str) -> Tuple[bool, List[str]]:
         """
         Check URL against Google Safe Browsing API.
         Returns (is_safe, list of threat types).
         """
-        # If no API key, use mock check
         if not self.api_key:
-            return self._mock_check(url)
+            logger.warning("Safe Browsing API key not configured — treating URL as safe")
+            return True, []
 
         try:
             return await self._api_check(url)
-        except Exception:
-            # Fall back to mock on API error
-            return self._mock_check(url)
+        except Exception as e:
+            logger.error("Safe Browsing API check failed: %s", e)
+            return True, []
 
     async def _api_check(self, url: str) -> Tuple[bool, List[str]]:
         """Actual API call to Google Safe Browsing."""
@@ -79,22 +68,8 @@ class SafeBrowsingService:
                     return False, threats
                 return True, []
             else:
-                # API error, fall back to mock
-                return self._mock_check(url)
-
-    def _mock_check(self, url: str) -> Tuple[bool, List[str]]:
-        """Mock check for development/testing."""
-        url_lower = url.lower()
-
-        for dangerous in self.mock_dangerous_urls:
-            if dangerous in url_lower:
-                return False, ["악성코드 또는 피싱 위협 감지됨"]
-
-        # Additional heuristic checks for mock
-        if "phishing" in url_lower or "malware" in url_lower:
-            return False, ["의심스러운 URL 패턴 감지됨"]
-
-        return True, []
+                logger.error("Safe Browsing API returned status %d", response.status_code)
+                return True, []
 
     def _translate_threat_type(self, threat_type: str) -> str:
         """Translate threat type to Korean."""

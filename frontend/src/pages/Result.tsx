@@ -98,7 +98,12 @@ export default function Result() {
     setReportLoading(true)
     setReportError(null)
     try {
-      const result = await reportUrl(scanData.final_url)
+      const result = await reportUrl(
+        scanData.final_url,
+        '',
+        scanData.risk_score,
+        scanData.ai_summary,
+      )
       setReportSent(true)
       setReportCount(result.report_count ?? null)
       setShareSuccess('신고가 접수되었습니다')
@@ -158,6 +163,43 @@ export default function Result() {
 
       <div className="space-y-4">
         <UrlInfo originalUrl={scanData.original_url} finalUrl={scanData.final_url} />
+
+        {/* AI Summary Card */}
+        {scanData.ai_summary && (
+          <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              AI 분석 요약
+            </h3>
+            <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
+              {scanData.ai_summary}
+            </p>
+          </div>
+        )}
+
+        {/* Action Guidelines Card */}
+        {scanData.action_guidelines && scanData.action_guidelines.length > 0 && (
+          <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+            <h3 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+              행동 수칙
+            </h3>
+            <ol className="space-y-2">
+              {scanData.action_guidelines.map((guideline, index) => (
+                <li key={index} className="flex items-start gap-2 text-sm text-gray-700 dark:text-slate-300">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary-500/10 text-primary-600 dark:text-primary-400 flex items-center justify-center text-xs font-medium">
+                    {index + 1}
+                  </span>
+                  <span className="leading-relaxed">{guideline}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         <FlagsList flags={scanData.flags} />
 

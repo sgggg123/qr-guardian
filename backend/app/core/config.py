@@ -5,6 +5,7 @@ from typing import List
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     GOOGLE_SAFE_BROWSING_API_KEY: str = ""
+    CLAUDE_API_KEY: str = ""
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:80",

@@ -26,8 +26,10 @@ export function generateShareText(scanData: ScanData): string {
     text += `최종 URL: ${scanData.final_url}\n`
   }
 
+  if (scanData.risk_score !== undefined) {
+    text += `\n위험도 점수: ${scanData.risk_score.toFixed(1)}/10\n`
+  }
   if (scanData.domain_analysis) {
-    text += `\n신뢰 점수: ${scanData.domain_analysis.trust_score}/100\n`
     text += `도메인: ${scanData.domain_analysis.domain}\n`
   }
 

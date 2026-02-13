@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
+from typing import List, Optional, Union
 from enum import Enum
 
 
@@ -39,7 +39,13 @@ class InfoRequirement(BaseModel):
 class SafeBrowsingResult(BaseModel):
     is_safe: bool
     threats: List[str]
-    mock_mode: bool = False
+
+
+class RiskBreakdownItem(BaseModel):
+    """Individual risk factor with score."""
+    factor: str
+    score: float
+    reason: str
 
 
 class SSLInfo(BaseModel):
@@ -57,8 +63,10 @@ class DomainAnalysis(BaseModel):
     domain: str
     ssl_info: Optional[SSLInfo] = None
     domain_age_days: Optional[int] = None
-    trust_score: int  # 0-100
+    trust_score: int  # 0-100 (legacy, kept for backward compat)
     risk_factors: List[dict]
+    risk_score: Optional[float] = None  # 0.0-10.0, higher = riskier
+    risk_breakdown: Optional[List[RiskBreakdownItem]] = None
 
 
 class RedirectHop(BaseModel):
@@ -78,6 +86,10 @@ class ScanData(BaseModel):
     safe_browsing: SafeBrowsingResult
     domain_analysis: Optional[DomainAnalysis] = None
     redirect_chain: Optional[List[RedirectHop]] = None
+    risk_score: Optional[float] = None  # 0.0-10.0
+    risk_breakdown: Optional[List[RiskBreakdownItem]] = None
+    ai_summary: Optional[str] = None
+    action_guidelines: Optional[List[str]] = None
 
 
 class ScanResponse(BaseModel):
@@ -114,6 +126,8 @@ class BulkScanResponse(BaseModel):
 class ReportRequest(BaseModel):
     url: str
     reason: str = ""
+    risk_score: Optional[float] = None
+    ai_summary: Optional[str] = None
 
 
 class ReportResponse(BaseModel):

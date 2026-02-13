@@ -225,16 +225,6 @@ export function SafeBrowsingCard({ result }: SafeBrowsingCardProps) {
         </div>
       )}
 
-      {result.mock_mode && (
-        <div className="mt-3 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/30 rounded p-2">
-          <p className="text-xs text-yellow-700 dark:text-yellow-300 flex items-center gap-1">
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            Safe Browsing API 미연동 상태 (제한된 검사만 수행)
-          </p>
-        </div>
-      )}
     </div>
   )
 }
@@ -251,21 +241,24 @@ const trustLevelConfig = {
 }
 
 export function DomainAnalysisCard({ analysis }: DomainAnalysisCardProps) {
-  const trustScoreColor =
-    analysis.trust_score >= 80
+  const riskScore = analysis.risk_score ?? 0
+
+  // Risk score colors (higher = more dangerous = redder)
+  const riskScoreColor =
+    riskScore <= 2
       ? 'text-green-600 dark:text-green-400'
-      : analysis.trust_score >= 60
+      : riskScore <= 5
         ? 'text-yellow-600 dark:text-yellow-400'
-        : analysis.trust_score >= 40
+        : riskScore <= 7
           ? 'text-orange-600 dark:text-orange-400'
           : 'text-red-600 dark:text-red-400'
 
-  const trustScoreBg =
-    analysis.trust_score >= 80
+  const riskBarBg =
+    riskScore <= 2
       ? 'bg-green-500'
-      : analysis.trust_score >= 60
+      : riskScore <= 5
         ? 'bg-yellow-500'
-        : analysis.trust_score >= 40
+        : riskScore <= 7
           ? 'bg-orange-500'
           : 'bg-red-500'
 
@@ -273,21 +266,53 @@ export function DomainAnalysisCard({ analysis }: DomainAnalysisCardProps) {
     <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
       <h3 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3">도메인 분석</h3>
 
-      {/* Trust Score */}
+      {/* Risk Score (0-10, higher = riskier) */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-500 dark:text-slate-500">신뢰 점수</span>
-          <span className={`text-lg font-bold ${trustScoreColor}`}>
-            {analysis.trust_score}/100
+          <span className="text-xs text-gray-500 dark:text-slate-500">위험도 점수</span>
+          <span className={`text-lg font-bold ${riskScoreColor}`}>
+            {riskScore.toFixed(1)}/10
           </span>
         </div>
         <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
           <div
-            className={`h-full ${trustScoreBg} transition-all duration-500`}
-            style={{ width: `${analysis.trust_score}%` }}
+            className={`h-full ${riskBarBg} transition-all duration-500`}
+            style={{ width: `${riskScore * 10}%` }}
           />
         </div>
       </div>
+
+      {/* Risk Breakdown */}
+      {analysis.risk_breakdown && analysis.risk_breakdown.length > 0 && (
+        <div className="mb-4 space-y-2">
+          <span className="text-xs text-gray-500 dark:text-slate-500">세부 항목</span>
+          {analysis.risk_breakdown.map((item, index) => (
+            <div key={index} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div
+                  className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    item.score === 0
+                      ? 'bg-green-500'
+                      : item.score <= 1
+                        ? 'bg-yellow-500'
+                        : item.score <= 2
+                          ? 'bg-orange-500'
+                          : 'bg-red-500'
+                  }`}
+                />
+                <span className="text-gray-600 dark:text-slate-400 truncate">{item.reason}</span>
+              </div>
+              <span className={`ml-2 font-mono flex-shrink-0 ${
+                item.score === 0
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-red-600 dark:text-red-400'
+              }`}>
+                +{item.score.toFixed(1)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Domain Info */}
       <div className="space-y-3 text-sm">

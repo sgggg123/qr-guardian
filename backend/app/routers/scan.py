@@ -8,7 +8,7 @@ logger = get_logger("scan")
 from app.models.schemas import (
     ScanRequest, ScanResponse, ScanData, Flag, Severity,
     RiskLevel, SafeBrowsingResult, ErrorResponse,
-    SSLInfo, DomainAnalysis, RedirectHop
+    SSLInfo, DomainAnalysis, RedirectHop, RiskBreakdownItem
 )
 from app.core.config import settings
 from app.services.url_analyzer import url_analyzer
@@ -16,6 +16,7 @@ from app.services.threat_detector import threat_detector
 from app.services.safe_browsing import safe_browsing_service
 from app.services.domain_analyzer import domain_analyzer
 from app.services.summary_generator import generate_summary
+from app.services.ai_summarizer import generate_ai_summary
 
 router = APIRouter(prefix="/api", tags=["scan"])
 
@@ -135,8 +136,22 @@ async def scan_url(scan_request: ScanRequest, request: Request):
                     message=f"보안 위협 감지: {threat}"
                 ))
 
-        # Domain analysis (SSL, domain age)
+        # Domain analysis (SSL, domain age, risk score)
         domain_result = await domain_analyzer.analyze_domain(final_url)
+
+        # Incorporate Safe Browsing into risk_breakdown
+        sb_risk = 0.0 if is_safe else 2.0
+        sb_reason = "알려진 위협 없음" if is_safe else "보안 데이터베이스에 위협이 등록됨"
+        domain_result["risk_breakdown"].append({
+            "factor": "safe_browsing",
+            "score": sb_risk,
+            "reason": sb_reason,
+        })
+        # Recalculate total risk_score with safe_browsing included
+        domain_result["risk_score"] = min(
+            10.0,
+            round(sum(item["score"] for item in domain_result["risk_breakdown"]), 1)
+        )
 
         # Add domain risk factors as flags (skip for trusted domains)
         is_trusted = _is_trusted_domain(final_url)
@@ -182,12 +197,24 @@ async def scan_url(scan_request: ScanRequest, request: Request):
                 days_until_expiry=ssl.get("days_until_expiry")
             )
 
+        # Build risk_breakdown items
+        risk_breakdown_data = [
+            RiskBreakdownItem(
+                factor=item["factor"],
+                score=item["score"],
+                reason=item["reason"],
+            )
+            for item in domain_result.get("risk_breakdown", [])
+        ]
+
         domain_analysis_data = DomainAnalysis(
             domain=domain_result.get("domain", ""),
             ssl_info=ssl_info_data,
             domain_age_days=domain_result.get("domain_age_days"),
             trust_score=domain_result.get("trust_score", 100),
-            risk_factors=domain_result.get("risk_factors", [])
+            risk_factors=domain_result.get("risk_factors", []),
+            risk_score=domain_result.get("risk_score", 0.0),
+            risk_breakdown=risk_breakdown_data,
         )
 
         # Build redirect chain response
@@ -199,6 +226,16 @@ async def scan_url(scan_request: ScanRequest, request: Request):
             )
             for hop in redirect_chain
         ] if redirect_chain else None
+
+        # Generate AI summary (async, non-blocking on failure)
+        risk_score_val = domain_result.get("risk_score", 0.0)
+        ai_result = await generate_ai_summary(
+            risk_score=risk_score_val,
+            risk_breakdown=domain_result.get("risk_breakdown", []),
+            risk_factors=domain_result.get("risk_factors", []),
+            url=final_url,
+            domain=domain_result.get("domain", ""),
+        )
 
         response = ScanResponse(
             status="success",
@@ -212,10 +249,13 @@ async def scan_url(scan_request: ScanRequest, request: Request):
                 safe_browsing=SafeBrowsingResult(
                     is_safe=is_safe,
                     threats=threats,
-                    mock_mode=safe_browsing_service.is_mock_mode,
                 ),
                 domain_analysis=domain_analysis_data,
-                redirect_chain=redirect_chain_data
+                redirect_chain=redirect_chain_data,
+                risk_score=risk_score_val,
+                risk_breakdown=risk_breakdown_data,
+                ai_summary=ai_result.get("ai_summary"),
+                action_guidelines=ai_result.get("action_guidelines"),
             )
         )
 

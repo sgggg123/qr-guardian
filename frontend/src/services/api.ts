@@ -51,11 +51,20 @@ export async function bulkScanUrls(urls: string[]): Promise<BulkScanResponse> {
   return response.json()
 }
 
-export async function reportUrl(url: string, reason: string = ''): Promise<{ status: string; message: string; report_count?: number; total_reports?: number }> {
+export async function reportUrl(
+  url: string,
+  reason: string = '',
+  riskScore?: number,
+  aiSummary?: string,
+): Promise<{ status: string; message: string; report_count?: number; total_reports?: number }> {
+  const body: Record<string, unknown> = { url, reason }
+  if (riskScore !== undefined) body.risk_score = riskScore
+  if (aiSummary !== undefined) body.ai_summary = aiSummary
+
   const response = await fetch(`${API_BASE}/api/report`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, reason }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
