@@ -71,6 +71,7 @@ curl -s -X POST http://localhost:8000/api/report \
 | `/settings` | Settings | 테마, 효과음, 진동 |
 | `/generate` | Generate | QR 코드 생성 |
 | `/bulk` | BulkScan | 벌크 URL 검사 (최대 20개) |
+| `/help` | Help | 사용 가이드 + 탐지 체험 3종 데모 |
 
 ---
 
@@ -93,7 +94,8 @@ curl -s -X POST http://localhost:8000/api/report \
 ```
 URL 입력 → 캐시 확인 → 단축URL 확인 → 리다이렉트 추적 → URL 구조 분석
 → 콘텐츠 분석 → Safe Browsing → 도메인/SSL 분석 (WHOIS + 비동기 SSL)
-→ 위험도 계산 → 플래그 중복제거 → 요약 생성 → 캐시 저장 → 응답
+→ risk_score 산출 → 위험도 계산 → 플래그 중복제거
+→ 템플릿 요약 + AI 요약(Claude) → 캐시 저장 → 응답
 ```
 
 ---
@@ -102,9 +104,11 @@ URL 입력 → 캐시 확인 → 단축URL 확인 → 리다이렉트 추적 →
 
 | 색 | 조건 |
 |----|------|
-| RED | DANGER 플래그 있음, Safe Browsing 위협, 신뢰점수 30 미만 |
-| YELLOW | WARNING 다수, 신뢰점수 60 미만, 유의미한 WARNING |
+| RED | Safe Browsing 위협, 타이포스쿼팅/피싱, risk_score ≥ 7.0 |
+| YELLOW | risk_score ≥ 3.0, 유의미한 WARNING 플래그 |
 | GREEN | 위 해당 없음 (화이트리스트 도메인은 무조건 GREEN) |
+
+**risk_score** (0~10점, 높을수록 위험): ssl(0~3) + domain_age(0~4) + safe_browsing(0~2) + url_pattern(0~3) + whois_failure(0~1)
 
 ---
 

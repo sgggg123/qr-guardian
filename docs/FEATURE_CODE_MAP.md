@@ -1,7 +1,7 @@
 # QR Guardian 기능-코드 매핑
 
 > 각 기능이 **어떤 파일의 몇 번째 줄**에 구현되어 있는지 정확하게 매핑한 문서입니다.
-> 최종 업데이트: 2026-02-10
+> 최종 업데이트: 2026-02-13
 
 ---
 
@@ -15,29 +15,31 @@
 6. [Google Safe Browsing 연동](#6-google-safe-browsing-연동)
 7. [SSL 인증서 분석](#7-ssl-인증서-분석)
 8. [WHOIS 도메인 나이 조회](#8-whois-도메인-나이-조회)
-9. [신뢰 점수 계산](#9-신뢰-점수-계산)
+9. [위험도 점수 계산 (risk_score)](#9-위험도-점수-계산)
 10. [위험도 판정 (GREEN/YELLOW/RED)](#10-위험도-판정)
 11. [자연어 요약 생성](#11-자연어-요약-생성)
-12. [인메모리 캐시](#12-인메모리-캐시)
-13. [Rate Limiting](#13-rate-limiting)
-14. [CORS 보안](#14-cors-보안)
-15. [벌크 스캔](#15-벌크-스캔)
-16. [URL 신고](#16-url-신고)
-17. [QR 코드 스캔 (카메라/이미지)](#17-qr-코드-스캔)
-18. [QR 코드 생성](#18-qr-코드-생성)
-19. [스캔 기록 (히스토리)](#19-스캔-기록)
-20. [신호등 UI](#20-신호등-ui)
-21. [결과 카드 컴포넌트](#21-결과-카드-컴포넌트)
-22. [효과음 및 진동](#22-효과음-및-진동)
-23. [결과 공유](#23-결과-공유)
-24. [다크/라이트 테마](#24-다크라이트-테마)
-25. [스켈레톤 로딩 UI](#25-스켈레톤-로딩-ui)
-26. [사이트 스크린샷 미리보기](#26-사이트-스크린샷-미리보기)
-27. [구조화된 로깅](#27-구조화된-로깅)
-28. [데이터 모델 (스키마)](#28-데이터-모델)
-29. [설정 및 화이트리스트](#29-설정-및-화이트리스트)
-30. [테스트](#30-테스트)
-31. [CI/CD](#31-cicd)
+12. [AI 요약 (Claude)](#12-ai-요약)
+13. [인메모리 캐시](#13-인메모리-캐시)
+14. [Rate Limiting](#14-rate-limiting)
+15. [CORS 보안](#15-cors-보안)
+16. [벌크 스캔](#16-벌크-스캔)
+17. [URL 신고](#17-url-신고)
+18. [QR 코드 스캔 (카메라/이미지)](#18-qr-코드-스캔)
+19. [QR 이미지 붙여넣기 (Ctrl+V)](#19-qr-이미지-붙여넣기)
+20. [QR 코드 생성](#20-qr-코드-생성)
+21. [스캔 기록 (히스토리)](#21-스캔-기록)
+22. [신호등 UI](#22-신호등-ui)
+23. [결과 카드 컴포넌트](#23-결과-카드-컴포넌트)
+24. [효과음 및 진동](#24-효과음-및-진동)
+25. [결과 공유](#25-결과-공유)
+26. [다크/라이트 테마](#26-다크라이트-테마)
+27. [스켈레톤 로딩 UI](#27-스켈레톤-로딩-ui)
+28. [사이트 스크린샷 미리보기](#28-사이트-스크린샷-미리보기)
+29. [구조화된 로깅](#29-구조화된-로깅)
+30. [데이터 모델 (스키마)](#30-데이터-모델)
+31. [설정 및 화이트리스트](#31-설정-및-화이트리스트)
+32. [테스트](#32-테스트)
+33. [CI/CD](#33-cicd)
 
 ---
 
@@ -136,13 +138,10 @@
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 서비스 클래스 | `backend/app/services/safe_browsing.py:6-110` | `SafeBrowsingService` |
-| Mock 모드 판별 | `backend/app/services/safe_browsing.py:12-15` | `is_mock_mode` 프로퍼티 — API 키 없으면 True |
-| URL 검사 | `backend/app/services/safe_browsing.py:30-43` | `check_url()` — API 키 유무에 따라 분기 |
-| 실제 API 호출 | `backend/app/services/safe_browsing.py:45-83` | `_api_check()` — Google API v4 POST 요청 |
-| Mock 검사 | `backend/app/services/safe_browsing.py:85-97` | `_mock_check()` — 하드코딩된 5개 도메인 + heuristic |
-| 위협 유형 번역 | `backend/app/services/safe_browsing.py:99-107` | `_translate_threat_type()` — 영문→한글 |
-| 프론트 경고 배너 | `frontend/src/components/ResultCard.tsx` → `SafeBrowsingCard` | `mock_mode === true`일 때 노란색 경고 |
+| 서비스 클래스 | `backend/app/services/safe_browsing.py` | `SafeBrowsingService` |
+| URL 검사 | `backend/app/services/safe_browsing.py` → `check_url()` | 실제 Google API v4 호출. API 키 없거나 호출 실패 시 `(True, [])` 반환 + warning 로그 |
+| API 호출 | `backend/app/services/safe_browsing.py` → `_api_check()` | Google Safe Browsing API v4 POST 요청 |
+| 위협 유형 번역 | `backend/app/services/safe_browsing.py` → `_translate_threat_type()` | 영문→한글 변환 |
 
 ---
 
@@ -153,7 +152,7 @@
 | 비동기 SSL 추출 | `backend/app/services/domain_analyzer.py:106-163` | `_get_ssl_info()` — `asyncio.open_connection()` + `getpeercert()` |
 | 발급기관 신뢰도 맵 | `backend/app/services/domain_analyzer.py:18-28` | `TRUSTED_ISSUERS` — DigiCert(100) ~ Let's Encrypt(60) |
 | 신뢰 등급 결정 | `backend/app/services/domain_analyzer.py:142-151` | score >= 90 → high, >= 70 → medium, 나머지 → low |
-| SSL 기반 감점 | `backend/app/services/domain_analyzer.py:165-203` | `_adjust_score_for_ssl()` — 만료(-30), 무료(-15), unknown(-10) 등 |
+| SSL 위험도 가산 | `backend/app/services/domain_analyzer.py` | HTTP:+3.0, 만료/저신뢰:+2.0, 곧만료:+1.0, 정상:0 |
 | 만료 여부 판정 | `backend/app/services/domain_analyzer.py:158` | `valid_until < datetime.now()` |
 | 곧 만료 판정 | `backend/app/services/domain_analyzer.py:195-201` | `days_until_expiry < 30` → `expiring_soon` 플래그 |
 
@@ -166,37 +165,45 @@
 | WHOIS 조회 | `backend/app/services/domain_analyzer.py:89-104` | `_get_whois_age()` — `whois.whois(domain).creation_date` |
 | list 처리 | `backend/app/services/domain_analyzer.py:98-99` | 일부 WHOIS가 list[datetime] 반환 시 첫 번째 사용 |
 | SSL fallback | `backend/app/services/domain_analyzer.py:61-66` | WHOIS 실패 시 SSL `valid_from`으로 대체 |
-| 나이 기반 감점 | `backend/app/services/domain_analyzer.py:70-85` | 30일 미만 → -20점(`new_domain`), 90일 미만 → -5점(`young_domain`) |
+| 나이 기반 가산 | `backend/app/services/domain_analyzer.py` | 30일 미만:+4.0, 90일 미만:+2.0, 1년 미만:+1.0 |
 | 출처 표기 | `backend/app/services/domain_analyzer.py:72` | "WHOIS 기준" 또는 "인증서 기준" 메시지에 포함 |
 
 ---
 
-## 9. 신뢰 점수 계산
+## 9. 위험도 점수 계산
+
+0~10 가산 방식의 `risk_score` 시스템. 높을수록 위험. (레거시 `trust_score`도 하위 호환용으로 병존)
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 초기값 | `backend/app/services/domain_analyzer.py:45` | `trust_score: 100` (100점에서 감점) |
-| SSL 감점 | `backend/app/services/domain_analyzer.py:165-203` | 무료 인증서(-15), 알 수 없는 발급기관(-10), 만료(-30), 곧 만료(-10) |
-| 도메인 나이 감점 | `backend/app/services/domain_analyzer.py:70-85` | 30일 미만(-20), 90일 미만(-5) |
-| 최소값 보장 | `backend/app/services/domain_analyzer.py:203` | `max(0, score)` — 0점 이하 방지 |
-| 프론트 게이지 바 | `frontend/src/components/ResultCard.tsx` → `DomainAnalysisCard` | 0~100 수평 바, 색상별 구분 |
+| risk_score 계산 | `backend/app/services/domain_analyzer.py` | 0~10 가산 방식. 각 요소별 점수를 합산 |
+| ssl 요소 | `backend/app/services/domain_analyzer.py` | 0~3점 — 만료(3), 알 수 없는 발급기관(2), 무료 인증서(1.5), 곧 만료(1) |
+| domain_age 요소 | `backend/app/services/domain_analyzer.py` | 0~4점 — 30일 미만(4), 90일 미만(2) |
+| safe_browsing 요소 | `backend/app/services/domain_analyzer.py` | 0~2점 — Safe Browsing 위협 탐지 시 가산 |
+| url_pattern 요소 | `backend/app/services/domain_analyzer.py` | 0~3점 — 의심스러운 URL 패턴 탐지 시 가산 |
+| whois_failure 요소 | `backend/app/services/domain_analyzer.py` | 0~1점 — WHOIS 조회 실패 시 가산 |
+| risk_breakdown | `backend/app/services/domain_analyzer.py` | `list[{factor, score, reason}]` — 각 요소별 상세 내역 |
+| 프론트 위험도 바 | `frontend/src/components/ResultCard.tsx` → `DomainAnalysisCard` | 0~10 위험도 바 (높을수록 위험) + risk_breakdown 항목별 표시 |
 
 ---
 
 ## 10. 위험도 판정
 
+`risk_score` 기반 판정으로 변경. `_calculate_flag_risk()` 함수 추가.
+
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 판정 함수 | `backend/app/routers/scan.py:261-293` | `_calculate_risk_level()` |
-| 신뢰 도메인 → GREEN | `backend/app/routers/scan.py:264-265` | `is_safe and _is_trusted_domain(final_url)` |
-| Safe Browsing 위협 → RED | `backend/app/routers/scan.py:267-268` | `not is_safe` |
-| 신뢰 점수 30 미만 → RED | `backend/app/routers/scan.py:278-279` | `trust_score < 30` |
-| DANGER 또는 고위험 플래그 → RED | `backend/app/routers/scan.py:281-282` | `typosquatting`, `phishing_pattern`, `expired_cert` 등 |
-| WARNING 3개+ 또는 점수 60 미만 → YELLOW | `backend/app/routers/scan.py:283-284` | `warning_count >= 3 or trust_score < 60` |
-| 유의미한 WARNING → YELLOW | `backend/app/routers/scan.py:285-291` | `suspicious_tld`, `ip_address`, `new_domain` 등 7종 |
-| 나머지 → GREEN | `backend/app/routers/scan.py:292-293` | |
-| 신뢰 도메인 체크 | `backend/app/routers/scan.py:244-258` | `_is_trusted_domain()` — 서브도메인 포함 매칭 |
-| 플래그 중복 제거 | `backend/app/routers/scan.py:296-304` | `_deduplicate_flags()` — type 기준 첫 번째만 유지 |
+| 판정 함수 | `backend/app/routers/scan.py` → `_calculate_risk_level()` | risk_score 기반 판정 |
+| 신뢰 도메인 + safe → GREEN | `backend/app/routers/scan.py` | `is_safe and _is_trusted_domain(final_url)` |
+| Safe Browsing 위협 → RED | `backend/app/routers/scan.py` | `not is_safe` |
+| 타이포스쿼팅/피싱 → RED | `backend/app/routers/scan.py` | `typosquatting` 또는 `phishing_pattern` 플래그 |
+| risk_score >= 7.0 → RED | `backend/app/routers/scan.py` | 높은 위험도 점수 |
+| risk_score >= 3.0 → YELLOW | `backend/app/routers/scan.py` | 중간 위험도 점수 |
+| Warning 플래그 → YELLOW | `backend/app/routers/scan.py` | warning 수준 플래그 존재 시 |
+| 나머지 → GREEN | `backend/app/routers/scan.py` | |
+| 플래그 위험도 계산 | `backend/app/routers/scan.py` → `_calculate_flag_risk()` | 플래그 기반 추가 위험도 계산 |
+| 신뢰 도메인 체크 | `backend/app/routers/scan.py` → `_is_trusted_domain()` | 서브도메인 포함 매칭 |
+| 플래그 중복 제거 | `backend/app/routers/scan.py` → `_deduplicate_flags()` | type 기준 첫 번째만 유지 |
 
 ---
 
@@ -214,7 +221,21 @@
 
 ---
 
-## 12. 인메모리 캐시
+## 12. AI 요약 (Claude)
+
+템플릿 요약 이후 Claude API를 통해 자연어 AI 요약을 생성하는 서비스.
+
+| 기능 | 코드 위치 | 핵심 로직 |
+|------|-----------|-----------|
+| 서비스 모듈 | `backend/app/services/ai_summarizer.py` | anthropic SDK 사용 |
+| 모델 | `ai_summarizer.py` | `claude-sonnet-4-5-20250929` |
+| 요약 생성 | `ai_summarizer.py` → `generate_ai_summary()` | `{ai_summary: str, action_guidelines: list[str]}` 반환 |
+| Fallback | `ai_summarizer.py` | API 키 미설정 또는 호출 실패 시 템플릿 기반 요약으로 대체 |
+| 호출 시점 | `backend/app/routers/scan.py` | 템플릿 요약(`generate_summary()`) 이후에 호출 |
+
+---
+
+## 13. 인메모리 캐시
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -226,7 +247,7 @@
 
 ---
 
-## 13. Rate Limiting
+## 14. Rate Limiting
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -239,7 +260,7 @@
 
 ---
 
-## 14. CORS 보안
+## 15. CORS 보안
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -250,7 +271,7 @@
 
 ---
 
-## 15. 벌크 스캔
+## 16. 벌크 스캔
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -265,7 +286,7 @@
 
 ---
 
-## 16. URL 신고
+## 17. URL 신고
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -277,7 +298,7 @@
 
 ---
 
-## 17. QR 코드 스캔
+## 18. QR 코드 스캔
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -290,7 +311,19 @@
 
 ---
 
-## 18. QR 코드 생성
+## 19. QR 이미지 붙여넣기 (Ctrl+V)
+
+클립보드에 복사된 QR 코드 이미지를 붙여넣기로 스캔하는 기능.
+
+| 기능 | 코드 위치 | 핵심 로직 |
+|------|-----------|-----------|
+| 붙여넣기 핸들러 | `frontend/src/pages/Home.tsx` | Ctrl+V `paste` 이벤트 리스너 |
+| QR 디코딩 | `Home.tsx` | `jsQR` 라이브러리로 클립보드 이미지에서 QR 코드 디코딩 |
+| 자동 분석 | `Home.tsx` | QR 코드 인식 시 URL 자동 추출 후 `analyzeUrl()` 호출 |
+
+---
+
+## 20. QR 코드 생성
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -301,7 +334,7 @@
 
 ---
 
-## 19. 스캔 기록
+## 21. 스캔 기록
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -317,7 +350,7 @@
 
 ---
 
-## 20. 신호등 UI
+## 22. 신호등 UI
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -330,20 +363,20 @@
 
 ---
 
-## 21. 결과 카드 컴포넌트
+## 23. 결과 카드 컴포넌트
 
 | 컴포넌트 | 코드 위치 | 표시 내용 |
 |----------|-----------|-----------|
 | `UrlInfo` | `frontend/src/components/ResultCard.tsx` | 원본 URL / 최종 URL (다르면 둘 다 표시) |
 | `FlagsList` | `ResultCard.tsx` | 탐지된 위험 요소 (severity별 색상 카드) |
 | `InfoRequirementCard` | `ResultCard.tsx` | 요구 정보 수준 (LOW/MEDIUM/HIGH 뱃지) |
-| `SafeBrowsingCard` | `ResultCard.tsx` | Safe Browsing 검사 결과 + mock_mode 경고 배너 |
-| `DomainAnalysisCard` | `ResultCard.tsx` | 신뢰 점수 게이지 + SSL 정보 + 도메인 나이 |
+| `SafeBrowsingCard` | `ResultCard.tsx` | Safe Browsing 검사 결과 |
+| `DomainAnalysisCard` | `ResultCard.tsx` | 위험도 점수 바 (0~10, 높을수록 위험) + risk_breakdown 항목별 표시 + SSL 정보 + 도메인 나이 |
 | `RedirectChainCard` | `ResultCard.tsx` | 리다이렉트 경로 시각화 (번호 + 도메인 + 상태코드) |
 
 ---
 
-## 22. 효과음 및 진동
+## 24. 효과음 및 진동
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -359,12 +392,12 @@
 
 ---
 
-## 23. 결과 공유
+## 25. 결과 공유
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
 | 공유 서비스 | `frontend/src/services/share.ts` | |
-| 공유 텍스트 생성 | `share.ts` → `generateShareText()` | 위험도 이모지 + URL + 신뢰 점수 + 위험 요소 + 요약 |
+| 공유 텍스트 생성 | `share.ts` → `generateShareText()` | 위험도 이모지 + URL + risk_score + 위험 요소 + 요약 |
 | 네이티브 공유 | `share.ts` | `navigator.share()` — 모바일 공유 시트 |
 | 클립보드 복사 | `share.ts` | `navigator.clipboard.writeText()` — 데스크톱 fallback |
 | 구형 브라우저 | `share.ts` | `document.execCommand('copy')` — 최종 fallback |
@@ -372,7 +405,7 @@
 
 ---
 
-## 24. 다크/라이트 테마
+## 26. 다크/라이트 테마
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -388,7 +421,7 @@
 
 ---
 
-## 25. 스켈레톤 로딩 UI
+## 27. 스켈레톤 로딩 UI
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -398,17 +431,19 @@
 
 ---
 
-## 26. 사이트 스크린샷 미리보기
+## 28. 사이트 스크린샷 미리보기
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| URL 생성 함수 | `frontend/src/services/api.ts` → `getScreenshotUrl()` | thum.io 외부 서비스 URL 조합 |
-| URL 형식 | `api.ts` | `https://image.thum.io/get/width/600/crop/400/{encoded_url}` |
+| URL 생성 함수 | `frontend/src/services/api.ts` → `getScreenshotUrl()` | Microlink API URL 조합 |
+| URL 형식 | `api.ts` | `https://api.microlink.io/?url={encoded_url}&screenshot=true&meta=false&embed=screenshot.url` |
 | 표시 위치 | `frontend/src/pages/Result.tsx` | `<img src={getScreenshotUrl(scanData.final_url)} />` |
+| 재시도 | `Result.tsx` | 로딩 실패 시 재시도 버튼 제공 |
+| 타임아웃 | `Result.tsx` | 15초 타임아웃 |
 
 ---
 
-## 27. 구조화된 로깅
+## 29. 구조화된 로깅
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -422,7 +457,7 @@
 
 ---
 
-## 28. 데이터 모델
+## 30. 데이터 모델
 
 ### Backend (Pydantic)
 
@@ -434,7 +469,8 @@
 | `ScanRequest` | `schemas.py:24-25` | 요청 바디 `{ url }` |
 | `Flag` | `schemas.py:28-31` | 탐지된 위험 요소 `{ type, severity, message }` |
 | `InfoRequirement` | `schemas.py:34-36` | 요구 정보 수준 `{ level, evidence }` |
-| `SafeBrowsingResult` | `schemas.py:39-42` | Safe Browsing 결과 `{ is_safe, threats, mock_mode }` |
+| `RiskBreakdownItem` | `schemas.py` | 위험도 세부 항목 `{ factor, score, reason }` |
+| `SafeBrowsingResult` | `schemas.py` | Safe Browsing 결과 `{ is_safe, threats }` |
 | `SSLInfo` | `schemas.py:45-52` | SSL 인증서 정보 |
 | `DomainAnalysis` | `schemas.py:55-61` | 도메인 분석 결과 |
 | `RedirectHop` | `schemas.py:64-68` | 리다이렉트 한 단계 |
@@ -460,13 +496,14 @@
 
 ---
 
-## 29. 설정 및 화이트리스트
+## 31. 설정 및 화이트리스트
 
 | 설정 | 코드 위치 | 내용 |
 |------|-----------|------|
 | Settings 클래스 | `backend/app/core/config.py:5-102` | pydantic_settings 기반 |
 | 환경 판별 | `config.py:6` | `ENVIRONMENT: str = "development"` |
 | Safe Browsing 키 | `config.py:7` | `GOOGLE_SAFE_BROWSING_API_KEY: str = ""` |
+| Claude API 키 | `config.py` | `CLAUDE_API_KEY: str = ""` |
 | CORS origins | `config.py:8-14` | localhost + railway.app |
 | 리다이렉트 제한 | `config.py:17` | `MAX_REDIRECTS: int = 10` |
 | 요청 타임아웃 | `config.py:18` | `REQUEST_TIMEOUT: float = 10.0` |
@@ -478,7 +515,7 @@
 
 ---
 
-## 30. 테스트
+## 32. 테스트
 
 | 테스트 파일 | 건수 | 코드 위치 | 검증 대상 |
 |------------|------|-----------|-----------|
@@ -496,7 +533,7 @@
 | `test_scan_trusted_domain_is_green` | google.com → GREEN |
 | `test_scan_empty_url_returns_400` | 빈 URL → 400 |
 | `test_scan_url_without_scheme_adds_https` | scheme 없는 URL에 https:// 자동 추가 |
-| `test_scan_safe_browsing_mock_mode_flag` | mock_mode 필드 포함 |
+| `test_scan_safe_browsing_result` | Safe Browsing 결과 포함 |
 | `test_scan_summary_is_not_empty` | 요약이 빈 문자열 아닌지 |
 | `test_scan_domain_analysis_present` | 도메인 분석 결과 포함 |
 | `test_scan_mock_malware_url` | 악성 URL 스캔 시 서버 정상 |
@@ -516,7 +553,7 @@
 
 ---
 
-## 31. CI/CD
+## 33. CI/CD
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|

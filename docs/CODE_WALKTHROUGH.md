@@ -62,7 +62,8 @@
   │        ├→ safe_browsing.py    (Google DB 조회)  │
   │        ├→ domain_analyzer.py  (SSL/WHOIS 분석)  │
   │        ├→ _calculate_risk_level() (GREEN/YELLOW/RED)
-  │        └→ summary_generator.py (한국어 요약)    │
+  │        ├→ summary_generator.py (한국어 요약)    │
+  │        └→ ai_summarizer.py  (Claude AI 요약)     │
   └──────────────────────┬───────────────────────┘
                          │ JSON 응답
                          ▼
@@ -177,6 +178,9 @@ const [error, setError] = useState<string | null>(null)  // 에러 메시지
 const [manualUrl, setManualUrl] = useState('')        // 입력된 URL
 ```
 
+**Ctrl+V 붙여넣기 핸들러:**
+- `handlePaste` — Ctrl+V 이미지 붙여넣기 시 jsQR로 QR 코드 디코딩 → 자동 분석
+
 **핵심 함수 — `analyzeUrl(url)`:**
 ```
 1. setIsLoading(true)              → 로딩 UI 표시
@@ -251,8 +255,8 @@ const rawApiUrl = import.meta.env.VITE_API_URL || PRODUCTION_API
 |------|------|-----------|------|
 | `scanUrl(url)` | POST | `/api/scan` | URL 보안 분석 |
 | `bulkScanUrls(urls)` | POST | `/api/bulk-scan` | 여러 URL 일괄 분석 |
-| `reportUrl(url, reason)` | POST | `/api/report` | URL 신고 |
-| `getScreenshotUrl(url)` | - | thum.io URL 생성 | 사이트 스크린샷 미리보기 URL |
+| `reportUrl(url, reason, riskScore?, aiSummary?)` | POST | `/api/report` | URL 신고 |
+| `getScreenshotUrl(url)` | - | Microlink 스크린샷 URL 생성 | 사이트 스크린샷 미리보기 URL (Microlink) |
 | `healthCheck()` | GET | `/health` | 서버 상태 확인 |
 
 **에러 처리 패턴:**
@@ -382,9 +386,11 @@ def _get_cached(key: str) -> ScanResponse | None:
 ⑥  URL 구조 분석 (최종URL + 원본URL)   → 타이포스쿼팅, 피싱 등 플래그
 ⑦  페이지 콘텐츠 분석                  → 로그인폼, 개인정보 등 플래그
 ⑧  Google Safe Browsing 검사          → safe_browsing_threat 플래그
+⑧½ _calculate_flag_risk()로 URL 패턴 위험도 산출
 ⑨  도메인 분석 (SSL + WHOIS)          → new_domain, expired_cert 등
 ⑩  위험도 계산 (GREEN/YELLOW/RED)
 ⑪  자연어 요약 생성
+⑫  AI 요약 생성 (Claude API, 실패시 skip)
 ```
 
 **위험도 계산 — `_calculate_risk_level()`:**
@@ -393,9 +399,9 @@ def _get_cached(key: str) -> ScanResponse | None:
 # 우선순위 높은 것부터:
 1. 신뢰 도메인 + Safe Browsing 안전  → GREEN (즉시 반환)
 2. Safe Browsing 위협 감지           → RED
-3. DANGER 플래그 존재               → RED
-4. 신뢰 점수 30 미만                → RED
-5. WARNING 3개 이상 또는 신뢰 점수 60 미만 → YELLOW
+3. 타이포스쿼팅 / 피싱 패턴           → RED
+4. risk_score >= 7.0                → RED
+5. risk_score >= 3.0                → YELLOW
 6. 유의미한 WARNING 1개 이상          → YELLOW
 7. 그 외                            → GREEN
 ```
@@ -584,12 +590,11 @@ HIGH   → 결제/개인정보 요청 (WARNING 이상 플래그 기준)
 Google Safe Browsing API v4 연동. 알려진 악성 URL 데이터베이스를 조회합니다.
 ```
 
-**두 가지 모드:**
+**동작 방식:**
+- API 키 설정됨 → 실제 Google Safe Browsing API v4 호출
+- API 키 미설정 또는 API 호출 실패 → 안전(True, [])으로 처리 + 경고 로그
 
-| 모드 | 조건 | 동작 |
-|------|------|------|
-| API 모드 | `GOOGLE_SAFE_BROWSING_API_KEY` 설정됨 | 실제 Google API 호출 |
-| Mock 모드 | API 키 없음 | 하드코딩된 테스트 URL만 감지 |
+Mock 모드는 제거되었습니다. API 키 없이도 서비스가 정상 동작하며, Safe Browsing 점수만 0으로 처리됩니다.
 
 **API 호출 구조:**
 ```python
@@ -602,14 +607,6 @@ payload = {
 # POST https://safebrowsing.googleapis.com/v4/threatMatches:find?key=...
 ```
 → 응답에 `matches`가 있으면 해당 URL은 위험합니다.
-
-**Mock 모드의 `is_mock_mode` 프로퍼티:**
-```python
-@property
-def is_mock_mode(self) -> bool:
-    return not bool(self.api_key)
-```
-→ 프론트엔드에서 이 값을 받아 "Safe Browsing API 미연동 상태" 경고를 표시합니다.
 
 **반환값:** `(is_safe: bool, threats: list[str])`
 - `True, []` → 안전
@@ -629,11 +626,11 @@ SSL 인증서 분석과 WHOIS 도메인 나이 조회를 담당합니다.
 ```
 1. domain 추출 (www. 제거)
 2. SSL 인증서 분석 (_get_ssl_info)  → 발급기관, 유효기간, 만료 여부
-3. SSL 결과로 신뢰 점수 조정 (_adjust_score_for_ssl)
+3. SSL 결과로 risk_score 가산 + risk_breakdown 항목 추가
 4. WHOIS 도메인 나이 조회 (_get_whois_age)
 5. WHOIS 실패 시 SSL 발급일로 fallback
-6. 도메인 나이 기반 risk factor 추가
-7. 결과 dict 반환
+6. 도메인 나이 기반 risk_score 가산 + risk_breakdown 항목 추가
+7. 결과 dict 반환 (risk_score, risk_breakdown 포함)
 ```
 
 **비동기 SSL 분석 — `_get_ssl_info()`:**
@@ -657,14 +654,17 @@ cert = ssl_object.getpeercert()
 | 중간 | Google Trust, Cloudflare | 85 | medium |
 | 낮음 | Let's Encrypt | 60 | low |
 
-**신뢰 점수 감점 — `_adjust_score_for_ssl()`:**
+**위험 점수 가산 (risk_score 0~10):**
 
-| 상황 | 감점 | 플래그 |
-|------|------|--------|
-| Let's Encrypt (무료) | -15 | `low_trust_issuer` |
-| 알 수 없는 발급기관 | -10 | `unknown_issuer` |
-| 인증서 만료됨 | -30 | `expired_cert` (DANGER) |
-| 30일 이내 만료 예정 | -10 | `expiring_soon` |
+| 상황 | 위험 점수 | 플래그 |
+|------|-----------|--------|
+| HTTP (SSL 없음) | +3.0 | - |
+| 인증서 만료/저신뢰 | +2.0 | expired_cert (DANGER) / low_trust_issuer |
+| 곧 만료 (30일 이내) | +1.0 | expiring_soon |
+| 도메인 30일 미만 | +4.0 | new_domain |
+| 도메인 90일 미만 | +2.0 | young_domain |
+| 도메인 1년 미만 | +1.0 | - |
+| WHOIS 조회 실패 | +1.0 | whois_failure |
 
 **WHOIS 조회 — `_get_whois_age()`:**
 ```python
@@ -674,10 +674,6 @@ creation_date = w.creation_date  # datetime 또는 list[datetime]
 return (datetime.now() - creation_date).days
 ```
 → 실패 시 `None` 반환 → SSL 발급일로 fallback
-
-**도메인 나이 기반 감점:**
-- 30일 미만 → -20점 + `new_domain` (WARNING)
-- 90일 미만 → -5점 + `young_domain` (INFO)
 
 ---
 
@@ -754,8 +750,9 @@ response = ScanResponse(
     data=ScanData(
         original_url=..., final_url=..., risk_level=...,
         summary=..., flags=..., info_requirement=...,
-        safe_browsing=SafeBrowsingResult(is_safe=..., threats=..., mock_mode=...),
-        domain_analysis=..., redirect_chain=...
+        safe_browsing=SafeBrowsingResult(is_safe=..., threats=...),
+        domain_analysis=..., redirect_chain=...,
+        risk_score=..., risk_breakdown=..., ai_summary=..., action_guidelines=...
     )
 )
 
@@ -784,22 +781,24 @@ if (!scanData) return <Navigate to="/" replace />  // 데이터 없으면 홈으
 ```
 1. 신호등 (TrafficLight)
 2. 자연어 요약 카드 (summary)
-3. URL 정보 (UrlInfo)
-4. 위험 요소 목록 (FlagsList)
-5. 요구 정보 수준 (InfoRequirementCard)
-6. Safe Browsing 결과 (SafeBrowsingCard)
-7. 도메인 분석 (DomainAnalysisCard)
-8. 리다이렉트 경로 (RedirectChainCard)
-9. 사이트 스크린샷 미리보기
-10. 액션 버튼들
+3. AI 요약 카드 (ai_summary)
+4. 행동 수칙 카드 (action_guidelines)
+5. URL 정보 (UrlInfo)
+6. 위험 요소 목록 (FlagsList)
+7. 요구 정보 수준 (InfoRequirementCard)
+8. Safe Browsing 결과 (SafeBrowsingCard)
+9. 도메인 분석 (DomainAnalysisCard)
+10. 리다이렉트 경로 (RedirectChainCard)
+11. 사이트 스크린샷 미리보기
+12. 액션 버튼들
 ```
 
 **스크린샷 미리보기:**
 ```tsx
 <img src={getScreenshotUrl(scanData.final_url)} />
-// → https://image.thum.io/get/width/600/crop/400/{encoded_url}
+// → Microlink API URL
 ```
-→ thum.io 외부 서비스가 해당 URL의 스크린샷을 찍어서 이미지로 반환합니다. 직접 접속하지 않고도 사이트 모습을 확인할 수 있습니다.
+→ Microlink 외부 서비스가 해당 URL의 스크린샷을 찍어서 이미지로 반환합니다. 직접 접속하지 않고도 사이트 모습을 확인할 수 있습니다.
 
 **액션 버튼들:**
 
@@ -841,13 +840,10 @@ danger  → 빨간색
 — LOW(초록)/MEDIUM(노란)/HIGH(빨강) 뱃지 + 감지된 입력 필드 목록
 
 **5) `SafeBrowsingCard`**
-— 방패 아이콘으로 안전/위험 표시. **mock_mode일 때 노란색 경고 배너:**
-```
-"Safe Browsing API 미연동 상태 (제한된 검사만 수행)"
-```
+— 방패 아이콘으로 안전/위험 표시.
 
 **6) `DomainAnalysisCard`**
-— 신뢰 점수 게이지 바 (0~100), 도메인 나이, SSL 발급기관, 인증서 신뢰도 뱃지, 만료 경고
+— 위험도 점수 바 (0~10, 높을수록 위험 = 빨강) + risk_breakdown 항목별 표시, 도메인 나이, SSL 발급기관, 인증서 신뢰도 뱃지, 만료 경고
 
 **7) `RedirectChainCard`**
 — 리다이렉트 경로를 단계별로 시각화 (번호 + 도메인 + HTTP 상태코드). 2회 이상이면 경고 메시지 표시.

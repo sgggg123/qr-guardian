@@ -1,6 +1,6 @@
 # QR Guardian - 시스템 전체 설명서
 
-> 최종 업데이트: 2026-02-09
+> 최종 업데이트: 2026-02-13
 
 ## 목차
 
@@ -14,7 +14,7 @@
 8. [API 명세](#8-api-명세)
 9. [위험도 판정 시스템](#9-위험도-판정-시스템)
 10. [자연어 요약 시스템](#10-자연어-요약-시스템)
-11. [신뢰 점수 시스템](#11-신뢰-점수-시스템)
+11. [위험도 점수 시스템](#11-위험도-점수-시스템)
 12. [로컬 개발 환경](#12-로컬-개발-환경)
 13. [배포](#13-배포)
 14. [테스트](#14-테스트)
@@ -37,9 +37,11 @@
 | 타이포스쿼팅 탐지 | naver → navar 같은 유사 도메인 사칭 탐지 |
 | SSL 인증서 분석 | 발급기관 신뢰도, 만료 상태, 인증서 나이 |
 | 리다이렉트 체인 시각화 | 시작 → 경유지 → 최종 목적지 전체 경로 표시 |
-| 신뢰 점수 | 0~100점 종합 점수 |
+| 위험도 점수 | 0~10점 risk_score (높을수록 위험) |
 | 신호등 UI | GREEN / YELLOW / RED 3단계 위험도 |
+| AI 요약 | Claude API 기반 한국어 분석 요약 + 행동 수칙 |
 | 자연어 요약 | 분석 결과를 한국어 2~3문장으로 요약 |
+| QR 이미지 붙여넣기 | Ctrl+V로 QR 코드 이미지 붙여넣기 디코딩 |
 | 스캔 기록 | localStorage 기반 히스토리 + 통계 |
 | QR 코드 생성 | URL → QR 코드 이미지 생성 및 다운로드 |
 | 알림 | 위험도별 효과음 + 진동 |
@@ -67,6 +69,7 @@
 | React Router 6 | SPA 라우팅 |
 | html5-qrcode | 카메라 QR 코드 스캔 |
 | qrcode.react | QR 코드 이미지 생성 |
+| jsQR | QR 코드 이미지 디코딩 (클립보드 붙여넣기) |
 
 ### Backend
 
@@ -78,6 +81,7 @@
 | slowapi | IP 기반 Rate Limiting |
 | python-whois | WHOIS 도메인 등록일 조회 |
 | uvicorn | ASGI 서버 |
+| anthropic | Claude AI 요약 서비스 |
 | pytest | 테스트 프레임워크 |
 
 ### 배포
@@ -122,7 +126,8 @@
 │    ├─ threat_detector   URL 구조 분석, 콘텐츠 분석     │
 │    ├─ safe_browsing     Google Safe Browsing API     │
 │    ├─ domain_analyzer   SSL 인증서, WHOIS 도메인 나이  │
-│    └─ summary_generator 자연어 요약 생성              │
+│    ├─ summary_generator 자연어 요약 생성              │
+│    └─ ai_summarizer     Claude AI 한국어 요약     │
 │                                                     │
 │  bulk.py   (벌크 스캔 - 최대 20개 URL 병렬 검사)       │
 │  report.py (URL 신고 접수 + 통계)                     │
@@ -163,6 +168,7 @@ qr/
 │   │   │   ├── threat_detector.py   # URL 구조 분석, 타이포스쿼팅, 콘텐츠 분석
 │   │   │   ├── safe_browsing.py     # Google Safe Browsing API 연동
 │   │   │   ├── domain_analyzer.py   # SSL 인증서(비동기), WHOIS, 신뢰 점수
+│   │   │   ├── ai_summarizer.py       # Claude API 기반 AI 요약
 │   │   │   └── summary_generator.py # 자연어 요약 생성 (템플릿 기반)
 │   │   └── models/
 │   │       └── schemas.py       # Pydantic 모델 (ScanRequest, ScanData, BulkScan 등)
@@ -229,7 +235,8 @@ qr/
 
 | 설정 | 설명 |
 |------|------|
-| `GOOGLE_SAFE_BROWSING_API_KEY` | Safe Browsing API 키 (없으면 Mock 모드) |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Safe Browsing API 키 (미설정시 Safe Browsing 검사 스킵) |
+| `CLAUDE_API_KEY` | Anthropic Claude API 키 (미설정시 AI 요약 비활성) |
 | `TRUSTED_DOMAINS` | 자동 안전 판정 도메인 (~90개: google.com, naver.com, go.kr 등) |
 | `POPULAR_BRANDS` | 타이포스쿼팅 탐지 대상 브랜드 (~50개: google, naver, kakao 등) |
 | `SHORTENER_DOMAINS` | 단축 URL 서비스 (~30개: bit.ly, han.gl, vo.la 등) |
@@ -251,15 +258,18 @@ POST /api/scan 요청 수신
   ├─ 5. threat_detector.analyze_page_content()      → 콘텐츠 플래그
   ├─ 6. safe_browsing_service.check_url()           → Safe Browsing 플래그
   ├─ 7. domain_analyzer.analyze_domain()            → SSL/도메인 플래그
-  ├─ 8. _calculate_risk_level()                     → GREEN / YELLOW / RED 판정
-  ├─ 9. _deduplicate_flags()                        → 중복 플래그 제거
-  ├─ 10. generate_summary()                         → 자연어 요약 생성
-  └─ 11. ScanResponse 반환
+  ├─ 8. _calculate_flag_risk()                       → 플래그 기반 risk_score 계산
+  ├─ 9. _calculate_risk_level()                     → GREEN / YELLOW / RED 판정
+  ├─ 10. _deduplicate_flags()                       → 중복 플래그 제거
+  ├─ 11. generate_summary()                         → 자연어 요약 생성
+  ├─ 12. ai_summarizer                              → Claude AI 한국어 요약 + 행동 수칙
+  └─ 13. ScanResponse 반환
 ```
 
 주요 내부 함수:
 - `_is_trusted_domain(url)` — 화이트리스트 도메인 체크 (서브도메인 포함)
-- `_calculate_risk_level(flags, is_safe, final_url, trust_score)` — 최종 위험도 계산
+- `_calculate_flag_risk(flags)` — 플래그 기반 risk_score 계산
+- `_calculate_risk_level(flags, is_safe, final_url, risk_score)` — 최종 위험도 계산
 - `_deduplicate_flags(flags)` — type 기준 중복 제거
 
 ### 5.4 `services/url_analyzer.py` — URL 분석
@@ -299,7 +309,7 @@ POST /api/scan 요청 수신
 ### 5.6 `services/safe_browsing.py` — Google Safe Browsing
 
 - `GOOGLE_SAFE_BROWSING_API_KEY`가 있으면 실제 Google API 호출
-- 없으면 Mock 모드 (테스트용 악성 URL만 탐지)
+- API 키 없거나 API 호출 실패 시 안전(True, [])으로 처리 + 경고 로그
 - 반환: `(is_safe: bool, threats: list[str])`
 
 ### 5.7 `services/domain_analyzer.py` — 도메인/SSL 분석
@@ -309,13 +319,23 @@ POST /api/scan 요청 수신
 | SSL 인증서 추출 | 비동기 `asyncio.open_connection` 기반. 발급기관, 유효기간, 만료 여부 |
 | 발급기관 신뢰도 평가 | DigiCert(100), GlobalSign(100), Let's Encrypt(60) 등 |
 | 도메인 나이 조회 | python-whois로 실제 등록일 조회, 실패 시 SSL 발급일 fallback |
-| 종합 신뢰 점수 | 100점 기준 감점 방식 (0~100점) |
+| 위험도 점수 | 0~10점 가점 방식 (risk_score + risk_breakdown) |
 
 ### 5.8 `services/summary_generator.py` — 자연어 요약
 
 템플릿 기반으로 분석 결과를 한국어 2~3문장으로 요약합니다. 상세 내용은 [10. 자연어 요약 시스템](#10-자연어-요약-시스템) 참조.
 
-### 5.9 `models/schemas.py` — 데이터 모델
+### 5.9 `services/ai_summarizer.py` — AI 요약
+
+Claude API(anthropic SDK)를 사용하여 분석 결과를 한국어로 요약하고 행동 수칙을 생성합니다.
+
+| 기능 | 설명 |
+|------|------|
+| AI 요약 | risk_score, risk_breakdown, 플래그 기반 한국어 2~3문장 요약 |
+| 행동 수칙 | 번호 매긴 구체적 행동 가이드 리스트 |
+| Fallback | API 키 없거나 실패 시 기존 템플릿 요약 사용 |
+
+### 5.10 `models/schemas.py` — 데이터 모델
 
 | 모델 | 용도 |
 |------|------|
@@ -385,19 +405,22 @@ POST /api/scan 요청 수신
 5. 스캔 완료 → `navigate('/result', { state: { scanData } })`
 6. 스캔 기록 자동 저장 (`addScanToHistory`)
 7. 위험도별 알림음/진동 재생 (`notifyRiskLevel`)
+8. Ctrl+V 이미지 붙여넣기 → jsQR로 QR 디코딩 → 자동 분석
 
 #### `Result.tsx` — 결과 페이지
 표시 순서:
 1. 신호등 (`TrafficLight`)
 2. **자연어 요약 카드** (`summary`)
-3. URL 정보 (`UrlInfo`)
-4. 위험 요소 목록 (`FlagsList`)
-5. 요구 정보 수준 (`InfoRequirementCard`)
-6. Safe Browsing 결과 (`SafeBrowsingCard`)
-7. 도메인 분석 (`DomainAnalysisCard`)
-8. 리다이렉트 경로 (`RedirectChainCard`)
-9. 사이트 스크린샷 미리보기 (thum.io)
-10. 버튼: URL 열기 / URL 복사 / 결과 공유 / URL 신고 / 다시 스캔
+3. **AI 요약 카드** (`ai_summary`)
+4. **행동 수칙 카드** (`action_guidelines`)
+5. URL 정보 (`UrlInfo`)
+6. 위험 요소 목록 (`FlagsList`)
+7. 요구 정보 수준 (`InfoRequirementCard`)
+8. Safe Browsing 결과 (`SafeBrowsingCard`)
+9. 도메인 분석 (`DomainAnalysisCard`)
+10. 리다이렉트 경로 (`RedirectChainCard`)
+11. 사이트 스크린샷 미리보기 (Microlink API, 재시도+타임아웃)
+12. 버튼: URL 열기 / URL 복사 / 결과 공유 / URL 신고 / 다시 스캔
 
 #### `History.tsx` — 스캔 기록
 - localStorage에 최대 50건 저장 (최근 20건은 전체 ScanData 포함)
@@ -421,8 +444,8 @@ POST /api/scan 요청 수신
 ```typescript
 scanUrl(url: string): Promise<ScanResponse>          // POST /api/scan
 bulkScanUrls(urls: string[]): Promise<BulkScanResponse>  // POST /api/bulk-scan
-reportUrl(url: string, reason?: string): Promise<...>     // POST /api/report
-getScreenshotUrl(url: string): string                     // thum.io 미리보기 URL
+reportUrl(url: string, reason?: string, riskScore?: number, aiSummary?: string): Promise<...>  // POST /api/report
+getScreenshotUrl(url: string): string                     // Microlink 스크린샷 URL
 healthCheck(): Promise<boolean>                            // GET /health
 ```
 - `VITE_API_URL` 환경변수 또는 프로덕션 Railway URL 사용
@@ -450,6 +473,7 @@ Backend `schemas.py`와 1:1 대응하는 TypeScript 인터페이스:
 ```typescript
 ScanData {
   original_url, final_url, risk_level, summary,
+  risk_score?, risk_breakdown?, ai_summary?, action_guidelines?,
   flags, info_requirement, safe_browsing,
   domain_analysis?, redirect_chain?
 }
@@ -546,6 +570,10 @@ URL을 분석합니다.
     "final_url": "https://example.com/page",
     "risk_level": "YELLOW",
     "summary": "일부 주의가 필요한 요소가 발견되었습니다. 단축 URL로 실제 목적지가 숨겨져 있습니다. 개인정보 입력 시 주의하세요.",
+    "risk_score": 2.5,
+    "risk_breakdown": {"ssl": 0, "domain_age": 1.5, "url_pattern": 1.0},
+    "ai_summary": "이 URL은 단축 URL을 통해 실제 목적지를 숨기고 있으며, 비교적 최근에 등록된 도메인입니다.",
+    "action_guidelines": ["1. 개인정보 입력을 자제하세요", "2. 로그인 정보를 요구하면 의심하세요"],
     "flags": [
       {
         "type": "shortened_url",
@@ -572,7 +600,7 @@ URL을 분석합니다.
         "days_until_expiry": 54
       },
       "domain_age_days": 36,
-      "trust_score": 65,
+      "risk_score": 2.5,
       "risk_factors": []
     },
     "redirect_chain": [
@@ -661,9 +689,9 @@ API 정보.
 
 1. **화이트리스트 도메인 + Safe Browsing 안전** → 즉시 `GREEN`
 2. **Safe Browsing 위협** → 즉시 `RED`
-3. **DANGER 플래그 존재** (typosquatting, phishing_pattern, expired_cert 등) → `RED`
-4. **신뢰 점수 30 미만** → `RED`
-5. **WARNING 3개 이상 또는 신뢰 점수 60 미만** → `YELLOW`
+3. **타이포스쿼팅/피싱 플래그 존재** → `RED`
+4. **risk_score >= 7.0** → `RED`
+5. **risk_score >= 3.0** → `YELLOW`
 6. **유의미한 WARNING 1개 이상** (suspicious_tld, new_domain, ip_address 등) → `YELLOW`
 7. **그 외** → `GREEN`
 
@@ -753,39 +781,27 @@ API 정보.
 
 ---
 
-## 11. 신뢰 점수 시스템
+## 11. 위험도 점수 시스템
 
-`domain_analyzer.py`가 0~100점 기준으로 계산합니다.
+`domain_analyzer.py`가 0~10점 가점 방식으로 계산합니다 (높을수록 위험).
 
-### 감점 기준
+### 가점 요인
 
-| 요인 | 감점 |
-|------|------|
-| Let's Encrypt (무료 인증서) | -15점 |
-| 알 수 없는 인증서 발급기관 | -10점 |
-| 만료된 인증서 | -30점 |
-| 30일 이내 만료 예정 | -10점 |
-| 신규 도메인 (30일 미만) | -20점 |
-| 비교적 새로운 도메인 (90일 미만) | -5점 |
+| 요인 | 최대 점수 |
+|------|-----------|
+| SSL 인증서 (무료/만료/미확인) | max 3점 |
+| 도메인 나이 (신규/짧은 이력) | max 4점 |
+| Safe Browsing 위협 | max 2점 |
+| URL 패턴 (의심 TLD/IP 사용 등) | max 3점 |
+| WHOIS 조회 실패 | max 1점 |
 
-### 인증서 발급기관별 기본 점수
+### 점수 → 위험도 판정
 
-| 등급 | 발급기관 | 점수 |
-|------|----------|------|
-| high | DigiCert, GlobalSign | 100 |
-| high | Comodo, Sectigo | 95 |
-| medium | GoDaddy, Amazon | 90 |
-| medium | Google Trust, Cloudflare | 85 |
-| low | Let's Encrypt | 60 |
-
-### 점수 → 위험도 영향
-
-| 점수 | 위험도 판정에 미치는 영향 |
-|------|--------------------------|
-| 80~100 | 영향 없음 |
-| 60~79 | YELLOW 쪽으로 |
-| 30~59 | YELLOW |
-| 0~29 | RED |
+| 점수 범위 | 위험도 |
+|-----------|--------|
+| 0 ~ 2.9 | GREEN |
+| 3.0 ~ 6.9 | YELLOW |
+| 7.0 이상 | RED |
 
 ---
 
@@ -829,7 +845,8 @@ docker-compose -f docker-compose.dev.yml up
 
 | 변수 | 위치 | 설명 | 기본값 |
 |------|------|------|--------|
-| `GOOGLE_SAFE_BROWSING_API_KEY` | Backend `.env` | Safe Browsing API 키 | (없으면 Mock 모드) |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Backend `.env` | Safe Browsing API 키 | (미설정시 Safe Browsing 스킵) |
+| `CLAUDE_API_KEY` | Backend `.env` | Anthropic Claude API 키 | (미설정시 AI 요약 비활성) |
 | `ENVIRONMENT` | Backend `.env` | 실행 환경 | `development` |
 | `VITE_API_URL` | Frontend `.env` | Backend URL | 프로덕션 Railway URL |
 
