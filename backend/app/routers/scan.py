@@ -147,7 +147,17 @@ async def scan_url(scan_request: ScanRequest, request: Request):
             "score": sb_risk,
             "reason": sb_reason,
         })
-        # Recalculate total risk_score with safe_browsing included
+
+        # Incorporate flag-based risks into risk_breakdown
+        flag_score, flag_reason = _calculate_flag_risk(all_flags)
+        if flag_score > 0:
+            domain_result["risk_breakdown"].append({
+                "factor": "url_pattern",
+                "score": flag_score,
+                "reason": flag_reason,
+            })
+
+        # Recalculate total risk_score with all factors
         domain_result["risk_score"] = min(
             10.0,
             round(sum(item["score"] for item in domain_result["risk_breakdown"]), 1)
@@ -167,8 +177,12 @@ async def scan_url(scan_request: ScanRequest, request: Request):
         # Determine info requirement level
         info_requirement = threat_detector.determine_info_requirement(all_flags, evidence)
 
-        # Calculate overall risk level (include domain trust score)
-        risk_level = _calculate_risk_level(all_flags, is_safe, final_url, domain_result.get("trust_score", 100))
+        # Calculate overall risk level (include domain trust score + risk_score)
+        risk_level = _calculate_risk_level(
+            all_flags, is_safe, final_url,
+            domain_result.get("trust_score", 100),
+            domain_result.get("risk_score", 0.0),
+        )
 
         # Remove duplicate flags
         unique_flags = _deduplicate_flags(all_flags)
@@ -295,8 +309,48 @@ def _is_trusted_domain(url: str) -> bool:
         return False
 
 
-def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str, trust_score: int = 100) -> RiskLevel:
-    """Calculate overall risk level based on flags and domain trust score."""
+def _calculate_flag_risk(flags: list[Flag]) -> tuple[float, str]:
+    """Calculate risk score contribution from detected flags.
+
+    Returns (score, reason) where score is 0.0~3.0.
+    """
+    flag_types = {f.type for f in flags}
+    reasons = []
+    score = 0.0
+
+    # Critical flags (max 3.0)
+    if "typosquatting" in flag_types:
+        score = max(score, 3.0)
+        reasons.append("브랜드 사칭(타이포스쿼팅) 의심")
+    if "phishing_pattern" in flag_types:
+        score = max(score, 3.0)
+        reasons.append("피싱 URL 패턴 감지")
+
+    # High-risk flags (2.0)
+    if "suspicious_tld" in flag_types:
+        score = max(score, 2.0)
+        reasons.append("의심스러운 도메인 확장자")
+    if "ip_address" in flag_types:
+        score = max(score, 2.0)
+        reasons.append("IP 주소 직접 사용")
+
+    # Medium flags (1.0)
+    if "login_path" in flag_types and score < 2.0:
+        score = max(score, 1.0)
+        reasons.append("로그인 경로 감지")
+    if "cross_domain_redirect" in flag_types and score < 2.0:
+        score = max(score, 1.0)
+        reasons.append("교차 도메인 리다이렉트")
+
+    reason = ", ".join(reasons) if reasons else "URL 패턴 이상 없음"
+    return score, reason
+
+
+def _calculate_risk_level(
+    flags: list[Flag], is_safe: bool, final_url: str,
+    trust_score: int = 100, risk_score: float = 0.0,
+) -> RiskLevel:
+    """Calculate overall risk level based on flags, trust score, and risk score."""
     # Trusted domains are always GREEN (unless Safe Browsing flags them)
     if is_safe and _is_trusted_domain(final_url):
         return RiskLevel.GREEN
@@ -311,23 +365,32 @@ def _calculate_risk_level(flags: list[Flag], is_safe: bool, final_url: str, trus
     high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat", "expired_cert"}
     has_high_risk = any(f.type in high_risk_types for f in flags)
 
+    # Risk score thresholds (primary)
+    if risk_score >= 7.0:
+        return RiskLevel.RED
+    if risk_score >= 4.0 and (warning_count >= 1 or not is_safe):
+        return RiskLevel.RED
+
     # Very low trust score = RED
     if trust_score < 30:
         return RiskLevel.RED
 
     if danger_count > 0 or has_high_risk:
         return RiskLevel.RED
-    elif warning_count >= 3 or trust_score < 60:
+
+    # YELLOW zone
+    if risk_score >= 3.0:
         return RiskLevel.YELLOW
-    elif warning_count >= 1:
-        # Only show yellow if there are significant warnings
+    if warning_count >= 3 or trust_score < 60:
+        return RiskLevel.YELLOW
+    if warning_count >= 1:
         significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "payment_form", "personal_info_request", "new_domain", "low_trust_issuer"}
         has_significant = any(f.type in significant_warnings and f.severity == Severity.WARNING for f in flags)
         if has_significant:
             return RiskLevel.YELLOW
         return RiskLevel.GREEN
-    else:
-        return RiskLevel.GREEN
+
+    return RiskLevel.GREEN
 
 
 def _deduplicate_flags(flags: list[Flag]) -> list[Flag]:

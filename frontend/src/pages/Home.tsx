@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import jsQR from 'jsqr'
 import QRScanner from '../components/QRScanner'
 import { scanUrl } from '../services/api'
 import { addScanToHistory } from '../services/scanHistory'
@@ -10,6 +11,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [manualUrl, setManualUrl] = useState('')
+  const [pasteHint, setPasteHint] = useState<string | null>(null)
 
   const handleScan = async (url: string) => {
     await analyzeUrl(url)
@@ -21,6 +23,50 @@ export default function Home() {
       await analyzeUrl(manualUrl.trim())
     }
   }
+
+  // Ctrl+V: decode QR from pasted image
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    if (isLoading) return
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const blob = item.getAsFile()
+        if (!blob) continue
+
+        setPasteHint('QR 코드 이미지 분석 중...')
+        try {
+          const bitmap = await createImageBitmap(blob)
+          const canvas = document.createElement('canvas')
+          canvas.width = bitmap.width
+          canvas.height = bitmap.height
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(bitmap, 0, 0)
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+          const code = jsQR(imageData.data, imageData.width, imageData.height)
+
+          if (code?.data) {
+            setPasteHint(null)
+            await analyzeUrl(code.data)
+          } else {
+            setPasteHint(null)
+            setError('이미지에서 QR 코드를 찾을 수 없습니다')
+          }
+        } catch {
+          setPasteHint(null)
+          setError('이미지 처리 중 오류가 발생했습니다')
+        }
+        return
+      }
+    }
+  }, [isLoading])
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [handlePaste])
 
   const analyzeUrl = async (url: string) => {
     setIsLoading(true)
@@ -54,12 +100,19 @@ export default function Home() {
 
       <QRScanner onScan={handleScan} />
 
+      {/* Paste hint */}
+      {pasteHint && (
+        <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-lg p-3 text-center">
+          <p className="text-sm text-blue-600 dark:text-blue-400">{pasteHint}</p>
+        </div>
+      )}
+
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-200 dark:border-slate-700" />
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="px-2 bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-500">또는 직접 입력</span>
+          <span className="px-2 bg-gray-50 dark:bg-slate-900 text-gray-500 dark:text-slate-500">또는 직접 입력 / Ctrl+V로 QR 이미지 붙여넣기</span>
         </div>
       </div>
 

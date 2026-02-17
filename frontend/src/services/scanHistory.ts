@@ -68,7 +68,10 @@ export function addScanToHistory(scanData: ScanData): ScanHistoryItem {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch {
     // Storage full, try to clear old items and strip scanData
-    const reduced = toSave.slice(0, 20).map(({ scanData: _, ...rest }) => rest)
+    const reduced = toSave.slice(0, 20).map((item) => {
+      const { scanData: _, ...rest } = item as ScanHistoryItem
+      return rest
+    })
     localStorage.setItem(STORAGE_KEY, JSON.stringify(reduced))
   }
 

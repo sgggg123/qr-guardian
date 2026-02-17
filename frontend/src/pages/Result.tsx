@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, Navigate, Link } from 'react-router-dom'
 import TrafficLight from '../components/TrafficLight'
 import {
@@ -24,6 +24,23 @@ export default function Result() {
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
   const [reportCount, setReportCount] = useState<number | null>(null)
+
+  const previewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 15-second timeout for preview loading
+  useEffect(() => {
+    if (previewLoading && showPreview) {
+      previewTimeoutRef.current = setTimeout(() => {
+        if (previewLoading) {
+          setPreviewLoading(false)
+          setPreviewError(true)
+        }
+      }, 15000)
+    }
+    return () => {
+      if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current)
+    }
+  }, [previewLoading, showPreview])
 
   if (!scanData) {
     return <Navigate to="/" replace />
@@ -123,6 +140,14 @@ export default function Result() {
       setPreviewError(false)
     }
     setShowPreview(!showPreview)
+  }
+
+  const handlePreviewRetry = () => {
+    setPreviewError(false)
+    setPreviewLoading(true)
+    // Force re-render by toggling off/on
+    setShowPreview(false)
+    setTimeout(() => setShowPreview(true), 50)
   }
 
   return (
@@ -240,7 +265,7 @@ export default function Result() {
                   </div>
                 </div>
               )}
-              {/* Error fallback */}
+              {/* Error fallback with retry */}
               {previewError && (
                 <div className="w-full h-36 bg-gray-50 dark:bg-slate-700/50 flex items-center justify-center">
                   <div className="text-center">
@@ -248,7 +273,13 @@ export default function Result() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <p className="text-xs text-gray-400 dark:text-slate-500">미리보기를 불러올 수 없습니다</p>
-                    <p className="text-xs text-gray-300 dark:text-slate-600 mt-1">외부 스크린샷 서비스에 연결할 수 없습니다</p>
+                    <p className="text-xs text-gray-300 dark:text-slate-600 mt-1">외부 서비스 응답 지연 또는 일일 요청 한도 초과</p>
+                    <button
+                      onClick={handlePreviewRetry}
+                      className="mt-2 text-xs text-primary-500 hover:text-primary-400 underline"
+                    >
+                      다시 시도
+                    </button>
                   </div>
                 </div>
               )}
