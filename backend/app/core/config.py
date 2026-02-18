@@ -1,5 +1,9 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
+
+# backend/ 디렉터리 (config.py 위치 기준 3단계 상위)
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -96,7 +100,8 @@ class Settings(BaseSettings):
     ]
 
     class Config:
-        env_file = ".env"
+        # backend/.env 를 절대경로로 읽음 (uvicorn 실행 위치 무관)
+        env_file = str(_BACKEND_DIR / ".env")
         extra = "ignore"
 
 
