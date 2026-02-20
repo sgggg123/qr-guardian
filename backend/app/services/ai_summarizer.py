@@ -1,6 +1,5 @@
-"""AI-powered summary generator using Claude API."""
+"""AI-powered summary generator using Google Gemini API."""
 import logging
-from typing import Optional
 from app.core.config import settings
 
 logger = logging.getLogger("ai_summarizer")
@@ -14,22 +13,23 @@ async def generate_ai_summary(
     domain: str,
 ) -> dict:
     """
-    Generate an AI-powered Korean summary and action guidelines using Claude API.
+    Generate an AI-powered Korean summary and action guidelines using Gemini API.
 
     Returns:
         {"ai_summary": str, "action_guidelines": list[str]}
 
     Falls back to None values if API key is missing or call fails.
     """
-    api_key = settings.CLAUDE_API_KEY
+    api_key = settings.GEMINI_API_KEY
     if not api_key:
-        logger.warning("CLAUDE_API_KEY not configured — skipping AI summary")
+        logger.warning("GEMINI_API_KEY not configured — skipping AI summary")
         return {"ai_summary": None, "action_guidelines": None}
 
     try:
-        import anthropic
+        import google.generativeai as genai
 
-        client = anthropic.Anthropic(api_key=api_key)
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         # Build context for the prompt
         breakdown_text = "\n".join(
@@ -61,17 +61,15 @@ async def generate_ai_summary(
 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {{"ai_summary": "요약 텍스트", "action_guidelines": ["수칙1", "수칙2", "수칙3"]}}"""
 
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        # Parse the response
-        response_text = message.content[0].text.strip()
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
 
         import json
-        # Try to extract JSON from the response
+        # Strip markdown code blocks if Gemini wraps response in ```json ... ```
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(lines[1:-1]).strip()
+
         result = json.loads(response_text)
         ai_summary = result.get("ai_summary")
         action_guidelines = result.get("action_guidelines")
@@ -86,7 +84,7 @@ async def generate_ai_summary(
         return {"ai_summary": None, "action_guidelines": None}
 
     except ImportError:
-        logger.warning("anthropic package not installed — skipping AI summary")
+        logger.warning("google-generativeai package not installed — skipping AI summary")
         return {"ai_summary": None, "action_guidelines": None}
     except Exception as e:
         logger.error("AI summary generation failed: %s", e)
