@@ -169,17 +169,27 @@ export default function Result() {
         <TrafficLight level={scanData.risk_level} size="lg" />
       </div>
 
-      {/* Summary Card — prominent, risk-colored */}
-      {scanData.summary && (
+      {/* Summary Card — AI 요약 우선, 없으면 템플릿 요약 폴백 */}
+      {(scanData.ai_summary || scanData.summary) && (
         <div className={`${style.bg} ${style.border} border rounded-xl p-4`}>
           <div className="flex items-start gap-3">
             <svg className={`w-6 h-6 ${style.icon} flex-shrink-0 mt-0.5`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={style.iconPath} />
             </svg>
-            <div>
-              <h3 className={`text-sm font-semibold ${style.text} mb-1`}>분석 요약</h3>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className={`text-sm font-semibold ${style.text}`}>분석 요약</h3>
+                {scanData.ai_summary && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/50 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    AI
+                  </span>
+                )}
+              </div>
               <p className={`text-sm ${style.text} leading-relaxed`}>
-                {scanData.summary}
+                {scanData.ai_summary ?? scanData.summary}
               </p>
             </div>
           </div>
@@ -188,21 +198,6 @@ export default function Result() {
 
       <div className="space-y-4">
         <UrlInfo originalUrl={scanData.original_url} finalUrl={scanData.final_url} />
-
-        {/* AI Summary Card */}
-        {scanData.ai_summary && (
-          <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              AI 분석 요약
-            </h3>
-            <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
-              {scanData.ai_summary}
-            </p>
-          </div>
-        )}
 
         {/* Action Guidelines Card */}
         {scanData.action_guidelines && scanData.action_guidelines.length > 0 && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
 import QRScanner from '../components/QRScanner'
@@ -6,12 +6,25 @@ import { scanUrl } from '../services/api'
 import { addScanToHistory } from '../services/scanHistory'
 import { notifyRiskLevel } from '../services/notifications'
 
+const SCAN_STEPS = [
+  { message: 'QR 코드에서 URL 읽는 중...', percent: 8 },
+  { message: 'URL 구조 분석 중...', percent: 20 },
+  { message: '리다이렉트 경로 추적 중...', percent: 35 },
+  { message: '위협 데이터베이스 조회 중...', percent: 52 },
+  { message: '도메인 보안 검사 중...', percent: 66 },
+  { message: 'SSL 인증서 검증 중...', percent: 79 },
+  { message: 'AI 위험도 분석 중...', percent: 91 },
+]
+
 export default function Home() {
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [manualUrl, setManualUrl] = useState('')
   const [pasteHint, setPasteHint] = useState<string | null>(null)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  const [loadingStep, setLoadingStep] = useState(0)
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleScan = async (url: string) => {
     await analyzeUrl(url)
@@ -71,21 +84,37 @@ export default function Home() {
   const analyzeUrl = async (url: string) => {
     setIsLoading(true)
     setError(null)
+    setLoadingProgress(SCAN_STEPS[0].percent)
+    setLoadingStep(0)
+
+    let step = 0
+    progressIntervalRef.current = setInterval(() => {
+      step++
+      if (step < SCAN_STEPS.length) {
+        setLoadingStep(step)
+        setLoadingProgress(SCAN_STEPS[step].percent)
+      }
+    }, 550)
 
     try {
       const response = await scanUrl(url)
 
-      // Save to history
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
+      setLoadingProgress(100)
+      setLoadingStep(-1) // 완료 상태
+
+      await new Promise(resolve => setTimeout(resolve, 350))
+
       addScanToHistory(response.data)
-
-      // Play notification sound/vibration
       notifyRiskLevel(response.data.risk_level)
-
       navigate('/result', { state: { scanData: response.data } })
     } catch (err) {
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current)
       setError(err instanceof Error ? err.message : 'URL 분석에 실패했습니다')
     } finally {
       setIsLoading(false)
+      setLoadingProgress(0)
+      setLoadingStep(0)
     }
   }
 
@@ -137,29 +166,72 @@ export default function Home() {
       {isLoading && (
         <div className="fixed inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl dark:shadow-none">
-            {/* Skeleton: Traffic Light */}
-            <div className="flex justify-center mb-4">
-              <div className="w-20 bg-gray-100 dark:bg-slate-700 rounded-full p-3 flex flex-col items-center gap-1.5">
-                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
-                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
-                <div className="w-5 h-5 rounded-full bg-gray-300 dark:bg-slate-600 animate-pulse" />
+
+            {/* 아이콘 + 완료 체크 */}
+            <div className="flex justify-center mb-5">
+              <div className="relative w-16 h-16">
+                <svg
+                  className={`w-16 h-16 transition-colors duration-500 ${loadingStep === -1 ? 'text-green-500' : 'text-primary-500'}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  {loadingStep === -1 ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  )}
+                </svg>
+                {loadingStep !== -1 && (
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center">
+                    <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
               </div>
             </div>
-            {/* Skeleton: Summary */}
-            <div className="space-y-2 mb-4">
-              <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded animate-pulse w-3/4 mx-auto" />
-              <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded animate-pulse w-1/2 mx-auto" />
+
+            {/* 퍼센트 + 프로그레스 바 */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs text-gray-500 dark:text-slate-400 truncate pr-2">
+                  {loadingStep === -1 ? '✓ 분석 완료!' : SCAN_STEPS[loadingStep]?.message}
+                </span>
+                <span className="text-xs font-semibold text-primary-600 dark:text-primary-400 tabular-nums flex-shrink-0">
+                  {loadingProgress}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ease-out ${loadingStep === -1 ? 'bg-green-500' : 'bg-primary-500'}`}
+                  style={{ width: `${loadingProgress}%` }}
+                />
+              </div>
             </div>
-            {/* Skeleton: Cards */}
-            <div className="space-y-3">
-              <div className="h-20 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
-              <div className="h-16 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
-              <div className="h-16 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse" />
+
+            {/* 단계 인디케이터 */}
+            <div className="flex justify-center gap-1.5 mb-5">
+              {SCAN_STEPS.map((_, i) => (
+                <div
+                  key={i}
+                  className={`rounded-full transition-all duration-300 ${
+                    loadingStep === -1
+                      ? 'w-1.5 h-1.5 bg-green-400'
+                      : i < loadingStep
+                        ? 'w-1.5 h-1.5 bg-primary-500'
+                        : i === loadingStep
+                          ? 'w-3 h-1.5 bg-primary-500'
+                          : 'w-1.5 h-1.5 bg-gray-300 dark:bg-slate-600'
+                  }`}
+                />
+              ))}
             </div>
-            {/* Progress text */}
-            <div className="mt-4 text-center">
-              <div className="w-8 h-8 border-3 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-sm text-gray-500 dark:text-slate-400">위협 요소를 검사하고 있습니다</p>
+
+            {/* 스켈레톤 미리보기 */}
+            <div className="space-y-2.5">
+              <div className="h-14 bg-gray-100 dark:bg-slate-700/50 rounded-xl animate-pulse" />
+              <div className="h-10 bg-gray-100 dark:bg-slate-700/50 rounded-xl animate-pulse" />
+              <div className="flex gap-2">
+                <div className="h-8 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse flex-1" />
+                <div className="h-8 bg-gray-100 dark:bg-slate-700/50 rounded-lg animate-pulse flex-1" />
+              </div>
             </div>
           </div>
         </div>
