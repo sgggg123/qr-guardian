@@ -61,7 +61,7 @@ async def generate_ai_summary(
 {{"ai_summary": "요약 텍스트", "action_guidelines": ["수칙1", "수칙2", "수칙3"]}}"""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
         )
         response_text = response.text.strip()
