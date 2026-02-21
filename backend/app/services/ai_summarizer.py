@@ -26,10 +26,9 @@ async def generate_ai_summary(
         return {"ai_summary": None, "action_guidelines": None}
 
     try:
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        client = genai.Client(api_key=api_key)
 
         # Build context for the prompt
         breakdown_text = "\n".join(
@@ -61,7 +60,10 @@ async def generate_ai_summary(
 다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {{"ai_summary": "요약 텍스트", "action_guidelines": ["수칙1", "수칙2", "수칙3"]}}"""
 
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
         response_text = response.text.strip()
 
         import json
@@ -84,7 +86,7 @@ async def generate_ai_summary(
         return {"ai_summary": None, "action_guidelines": None}
 
     except ImportError:
-        logger.warning("google-generativeai package not installed — skipping AI summary")
+        logger.warning("google-genai package not installed — skipping AI summary")
         return {"ai_summary": None, "action_guidelines": None}
     except Exception as e:
         logger.error("AI summary generation failed: %s", e)
