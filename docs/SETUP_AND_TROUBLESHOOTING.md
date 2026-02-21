@@ -1,6 +1,6 @@
 # QR Guardian — 설정 가이드 & 트러블슈팅
 
-> 마지막 업데이트: 2026-02-21
+> 마지막 업데이트: 2026-02-21 (Gemini 2.5-flash 적용, 로딩 UI 개선, 요약 카드 통합)
 
 ---
 
@@ -15,8 +15,9 @@
 | URL 신고 (`/api/report`) | ✅ 정상 | |
 | 타이포스쿼팅 탐지 | ✅ 정상 | |
 | Google Safe Browsing | ✅ 정상 | API 키 설정됨 |
-| Gemini AI 요약 (코드) | ✅ 정상 | SDK: google-genai, 모델: gemini-2.0-flash |
-| Gemini AI 요약 (실행) | ⚠️ Free Tier 할당량 소진 | 익일 초기화 또는 유료 플랜 필요 |
+| Gemini AI 요약 | ✅ 정상 | SDK: google-genai / 모델: gemini-2.5-flash / 동작 검증 완료 |
+| 스캔 로딩 UI | ✅ 정상 | 7단계 진행 메시지 + 퍼센트 프로그레스 바 |
+| 분석 요약 카드 | ✅ 정상 | AI 요약 우선 표시, 실패 시 템플릿 자동 폴백 |
 | QR 카메라 스캔 | ✅ 정상 | |
 | QR 이미지 붙여넣기 | ✅ 정상 | Ctrl+V |
 | QR 코드 생성 | ✅ 정상 | |
@@ -39,8 +40,8 @@
 - **역할**: 스캔 결과를 AI가 한국어로 요약 + 행동 수칙 생성
 - **없으면**: AI 요약 없이 템플릿 기반 요약만 표시 (나머지 기능 정상)
 - **발급처**: [Google AI Studio](https://aistudio.google.com/app/apikey)
-- **현재 사용 SDK**: `google-genai` (구 `google-generativeai`는 deprecated)
-- **현재 모델**: `gemini-2.0-flash`
+- **현재 사용 SDK**: `google-genai` (구 `google-generativeai`는 deprecated → 교체 완료)
+- **현재 모델**: `gemini-2.5-flash` (gemini-2.0-flash는 Free Tier 소진 이슈로 교체됨)
 - **설정 위치**:
   - 로컬: `backend/.env` → `GEMINI_API_KEY=발급받은키`
   - Railway: Variables → `GEMINI_API_KEY=발급받은키`
@@ -131,10 +132,11 @@ npm run dev
 | 원인 | 확인 방법 | 해결 |
 |------|----------|------|
 | `GEMINI_API_KEY` 미설정 | Railway Variables 확인 | Railway에 `GEMINI_API_KEY` 추가 후 재배포 |
-| Free Tier 일일 할당량 소진 | Railway 로그에 `429 RESOURCE_EXHAUSTED` | 익일 자정 이후 자동 초기화, 또는 유료 플랜 활성화 |
-| Free Tier 분당 한도 초과 | 같은 429 오류, 잠시 후 재시도 | 1분 대기 후 자동 복구 |
+| 모델별 Free Tier 한도 소진 | Railway 로그에 `429 RESOURCE_EXHAUSTED` | 현재 `gemini-2.5-flash` 사용 중 (한도 여유 있음) |
+| 특정 모델 Free Tier 한도 0 | 로그에 `limit: 0` | `ai_summarizer.py`에서 다른 모델로 변경 |
 | API 키 무효 | Railway 로그에 `401` 또는 `403` | [AI Studio](https://aistudio.google.com/app/apikey)에서 새 키 발급 |
-| 잘못된 패키지 설치 | Railway 로그에 `ImportError` | `requirements.txt`에 `google-genai>=1.0.0` 확인 |
+| 잘못된 패키지 설치 | Railway 로그에 `ImportError: No module named 'google'` | `requirements.txt`에 `google-genai>=1.0.0` 확인 |
+| 구버전 패키지 사용 | 로그에 `FutureWarning: google.generativeai` | `requirements.txt`에서 `google-generativeai` → `google-genai` 교체 |
 
 > AI 요약이 없어도 나머지 위험도 분석, 플래그, 요약 텍스트는 정상 표시됩니다.
 
@@ -181,6 +183,30 @@ cat backend/.env | grep GEMINI
 ```env
 GEMINI_API_KEY=발급받은키
 ```
+
+---
+
+### ❌ AI 요약 모델을 바꾸고 싶을 때
+
+`backend/app/services/ai_summarizer.py` 에서 모델명만 변경:
+
+```python
+response = client.models.generate_content(
+    model="gemini-2.5-flash",   # ← 여기를 바꿈
+    contents=prompt,
+)
+```
+
+**현재 키로 사용 가능한 주요 모델** (2026-02-21 기준):
+
+| 모델 | 특징 |
+|------|------|
+| `gemini-2.5-flash` | **현재 사용 중** — 최신, Free Tier 여유 있음 |
+| `gemini-2.5-pro` | 더 강력, 느림, 할당량 적음 |
+| `gemini-2.0-flash` | Free Tier 소진 (사용 비권장) |
+| `gemini-2.0-flash-lite` | Free Tier 소진 (사용 비권장) |
+
+변경 후 반드시 `git push origin main` 으로 Railway에 재배포.
 
 ---
 

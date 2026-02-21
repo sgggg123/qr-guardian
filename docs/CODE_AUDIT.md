@@ -1,6 +1,7 @@
 # QR Guardian — 코드 감사 보고서
 
 > **작성일**: 2026-02-21
+> **최종 업데이트**: 2026-02-21 (Gemini SDK 교체, 로딩 UI 개선, 요약 카드 통합)
 > **감사 대상**: 전체 소스코드 (백엔드 + 프론트엔드)
 > **목적**: 기능 정상 동작 확인 · 활성/비활성 코드 분리 · 백-프론트 연결 상태 점검
 
@@ -15,7 +16,7 @@
 | **백엔드** | FastAPI (Python 3.12) |
 | **프론트엔드** | React 18 + TypeScript (Vite 빌드) |
 | **배포** | Railway (백엔드: `qr-guardianbackend-production.up.railway.app`, 프론트엔드: 별도 서비스) |
-| **AI 요약** | Google Gemini API (`gemini-1.5-flash`) |
+| **AI 요약** | Google Gemini API (`gemini-2.5-flash`, SDK: `google-genai`) |
 | **위협 DB** | Google Safe Browsing API |
 | **개발 목적** | QR 코드를 통한 피싱·악성 URL 피해 방지 |
 
@@ -32,7 +33,7 @@
 | 대량 스캔 엔드포인트 | ✅ 정상 | `/api/bulk-scan` |
 | URL 신고 엔드포인트 | ✅ 정상 | `/api/report` |
 | Google Safe Browsing | ✅ 정상 | API 키 설정됨 |
-| Google Gemini AI 요약 | ✅ 정상 | 2026-02-21 전환 완료 (Claude → Gemini) |
+| Google Gemini AI 요약 | ✅ 정상 | SDK: google-genai / 모델: gemini-2.5-flash / 동작 검증 완료 |
 | 레이트 리미터 | ✅ 정상 | slowapi, IP 기반 |
 | 스캔 캐시 | ✅ 정상 | 인메모리 TTL 10분 |
 | 다크모드 | ✅ 정상 | localStorage 연동 |
@@ -174,9 +175,10 @@ GET  /         → {"name": "QR Guardian API", "version": "1.0.0"}
 
 #### `backend/app/services/ai_summarizer.py`
 - **역할**: Google Gemini API로 한국어 AI 요약 + 행동 수칙 생성
-- **상태**: ✅ 활성 (2026-02-21 Claude → Gemini 전환)
-- **모델**: `gemini-1.5-flash`
-- **설정**: `GEMINI_API_KEY` 없으면 graceful skip
+- **상태**: ✅ 활성 (2026-02-21 Claude → Gemini 전환, SDK 최신화)
+- **SDK**: `google-genai` (구 `google-generativeai` deprecated → 교체 완료)
+- **모델**: `gemini-2.5-flash` (gemini-2.0-flash Free Tier 소진 이슈로 교체)
+- **설정**: `GEMINI_API_KEY` 없으면 graceful skip (템플릿 요약으로 자동 폴백)
 - **출력**: `{"ai_summary": "...", "action_guidelines": ["수칙1", ...]}`
 
 ---
@@ -307,6 +309,7 @@ GET  /         → {"name": "QR Guardian API", "version": "1.0.0"}
 - **역할**: QR 카메라 스캔 + URL 수동 입력 + 이미지 붙여넣기(Ctrl+V)
 - **상태**: ✅ 활성
 - **사용 서비스**: `api.ts`, `scanHistory.ts`, `notifications.ts`
+- **로딩 UI**: 7단계 진행 메시지 + 퍼센트 프로그레스 바 + 단계 인디케이터 (2026-02-21 개선)
 
 #### `frontend/src/pages/Result.tsx`
 - **역할**: 스캔 결과 전체 표시
@@ -318,7 +321,8 @@ GET  /         → {"name": "QR Guardian API", "version": "1.0.0"}
   - Safe Browsing 결과
   - 도메인 분석 (SSL, 나이, 신뢰점수, 위험 분석 표)
   - 리다이렉트 체인
-  - **AI 요약 + 행동 수칙** (Gemini 설정 시)
+  - **분석 요약 카드** (AI 요약 우선 표시, 없으면 템플릿 폴백 / AI 뱃지 구분)
+  - **행동 수칙** (Gemini 설정 시)
   - 웹사이트 미리보기 (microlink.io)
   - 신고 버튼, 공유 버튼, 열기 버튼
 
@@ -483,6 +487,10 @@ info_requirement    →  InfoRequirementCard 컴포넌트
 | `anthropic` 패키지 | requirements.txt에 포함 | 제거됨 (2026-02-21) |
 | `CLAUDE_API_KEY` 설정 | config.py에 존재 | `GEMINI_API_KEY`로 교체 |
 | Claude 기반 ai_summarizer | 활성 | Gemini로 전환 완료 |
+| `google-generativeai` 패키지 | requirements.txt에 포함 | deprecated → `google-genai`로 교체 (2026-02-21) |
+| Gemini 모델 | `gemini-2.0-flash` | `gemini-2.5-flash`로 교체 (Free Tier 소진 이슈) |
+| 로딩 UI | 스피너 + 고정 텍스트 | 7단계 메시지 + 퍼센트 프로그레스 바 (2026-02-21) |
+| 요약 카드 구조 | 템플릿 카드 + AI 카드 별도 2개 | 하나의 카드로 통합 (AI 우선, 템플릿 폴백) |
 
 ---
 
