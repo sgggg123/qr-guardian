@@ -44,7 +44,7 @@ VITE_API_URL=http://localhost:8000
 | 변수 | 필수 | 설명 |
 |------|------|------|
 | `GOOGLE_SAFE_BROWSING_API_KEY` | 선택 | 미설정 시 Safe Browsing 스킵 |
-| `CLAUDE_API_KEY` | 선택 | 미설정 시 AI 요약 비활성 |
+| `GEMINI_API_KEY` | 선택 | 미설정 시 AI 요약 비활성 |
 | `ENVIRONMENT` | - | `development` / `production` |
 
 > 두 키가 로컬에도 설정되면 Railway와 **100% 동일하게 동작**합니다.
@@ -105,7 +105,7 @@ Home.tsx                               scan.py (오케스트레이터)
                                          ├─ _calculate_flag_risk(): 플래그 기반 위험도 추가
                                          ├─ _calculate_risk_level(): GREEN/YELLOW/RED 판정
                                          ├─ summary_generator: 템플릿 한국어 요약
-                                         └─ ai_summarizer: Claude AI 요약 (선택)
+                                         └─ ai_summarizer: Gemini AI 요약 (선택)
   ←── ScanResponse (JSON) ──────────
 Result.tsx
   └─ 신호등 + AI 요약 + 행동 수칙 + 상세 카드
@@ -198,7 +198,7 @@ Railway 대시보드 > 백엔드 서비스 > **Variables** 탭에서 환경변�
 |----------|------|
 | `ENVIRONMENT` | `production` (API 문서 비활성화) |
 | `GOOGLE_SAFE_BROWSING_API_KEY` | Safe Browsing API 키 |
-| `CLAUDE_API_KEY` | Claude API 키 |
+| `GEMINI_API_KEY` | Google Gemini API 키 |
 
 ---
 
@@ -208,8 +208,8 @@ Railway 대시보드 > 백엔드 서비스 > **Variables** 탭에서 환경변�
 1. [Google Cloud Console](https://console.cloud.google.com/) → "API 및 서비스" → "라이브러리"에서 Safe Browsing API 검색 → 사용 설정
 2. "사용자 인증 정보" → "API 키" 발급
 
-**Claude API (Anthropic)**
-1. [console.anthropic.com](https://console.anthropic.com/) → "API Keys" → "Create Key"
+**Google Gemini API**
+1. [Google AI Studio](https://aistudio.google.com/app/apikey) → "Create API key"
 
 ---
 
@@ -217,7 +217,7 @@ Railway 대시보드 > 백엔드 서비스 > **Variables** 탭에서 환경변�
 
 | 증상 | 원인 | 해결 |
 |------|------|------|
-| AI 요약 없음 | `CLAUDE_API_KEY` 미설정 | `.env`에 키 추가 |
+| AI 요약 없음 | `GEMINI_API_KEY` 미설정 또는 Free Tier 한도 소진 | `.env`에 키 추가 / 모델 교체 참고 |
 | Safe Browsing 항상 안전 | `GOOGLE_SAFE_BROWSING_API_KEY` 미설정 | `.env`에 키 추가 |
 | CORS 오류 | 프론트 도메인 허용 목록 없음 | `BACKEND_CORS_ORIGINS`에 도메인 추가 |
 | 미리보기 실패 | Microlink 일일 한도 초과 | 다음 날 리셋 or 재시도 버튼 |

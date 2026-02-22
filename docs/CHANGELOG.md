@@ -1,6 +1,36 @@
 # QR Guardian 변경 이력
 
-> 최종 업데이트: 2026-02-18
+> 최종 업데이트: 2026-02-21
+
+---
+
+## 2026-02-21 변경 이력
+
+### AI 엔진 전환 (Claude → Google Gemini)
+
+| 항목 | 변경 전 | 변경 후 | 커밋 |
+|------|---------|---------|------|
+| AI SDK | `anthropic` | `google-genai` | `235d8c2` |
+| AI 모델 | `claude-haiku-4-5` | `gemini-2.5-flash` | `726a337` |
+| 환경변수 | `CLAUDE_API_KEY` | `GEMINI_API_KEY` | `235d8c2` |
+| 구버전 SDK 교체 | `google-generativeai` (deprecated) | `google-genai>=1.0.0` | `b4eae20` |
+
+> **배경**: `google-generativeai` 패키지 공식 지원 종료 + `gemini-2.0-flash` Free Tier 소진 이슈로 `gemini-2.5-flash`로 교체
+
+### UX 개선
+
+| 항목 | 내용 | 커밋 |
+|------|------|------|
+| 스캔 로딩 UI | 스피너 단일 텍스트 → 7단계 진행 메시지 + 퍼센트 프로그레스 바 + 단계 인디케이터 | `5794d31` |
+| 요약 카드 통합 | 템플릿/AI 카드 2개 분리 → 1개 통합 (AI 우선 표시, 실패 시 템플릿 자동 폴백) | `5794d31` |
+
+### 문서화
+
+| 파일 | 내용 | 커밋 |
+|------|------|------|
+| `docs/CODE_AUDIT.md` | 전체 코드 감사 보고서 최초 작성 | `1dc5380` |
+| `docs/SETUP_AND_TROUBLESHOOTING.md` | 설정 가이드 + 트러블슈팅 최초 작성 | `116efc0` |
+| `docs/QUICKSTART.md` | CLAUDE_API_KEY → GEMINI_API_KEY 전체 교체 | `287cdd4` |
 
 ---
 
