@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         "http://localhost",
         "https://*.railway.app",
         "https://*.up.railway.app",
+        "https://qr-gudianfrontend-production.up.railway.app",
     ]
 
     # URL analysis settings
