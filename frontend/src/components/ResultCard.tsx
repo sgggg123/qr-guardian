@@ -271,7 +271,7 @@ export function DomainAnalysisCard({ analysis }: DomainAnalysisCardProps) {
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-500 dark:text-slate-500">위험도 점수</span>
           <span className={`text-lg font-bold ${riskScoreColor}`}>
-            {riskScore.toFixed(1)}/10
+            {riskScore.toFixed(1)}/10.0
           </span>
         </div>
         <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">

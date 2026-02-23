@@ -27,7 +27,7 @@ export function generateShareText(scanData: ScanData): string {
   }
 
   if (scanData.risk_score !== undefined) {
-    text += `\n위험도 점수: ${scanData.risk_score.toFixed(1)}/10\n`
+    text += `\n위험도 점수: ${scanData.risk_score.toFixed(1)}/10.0\n`
   }
   if (scanData.domain_analysis) {
     text += `도메인: ${scanData.domain_analysis.domain}\n`
