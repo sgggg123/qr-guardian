@@ -1,7 +1,7 @@
 # QR Guardian 기능-코드 매핑
 
 > 각 기능이 **어떤 파일의 몇 번째 줄**에 구현되어 있는지 정확하게 매핑한 문서입니다.
-> 최종 업데이트: 2026-02-13
+> 최종 업데이트: 2026-02-23
 
 ---
 
@@ -18,7 +18,7 @@
 9. [위험도 점수 계산 (risk_score)](#9-위험도-점수-계산)
 10. [위험도 판정 (GREEN/YELLOW/RED)](#10-위험도-판정)
 11. [자연어 요약 생성](#11-자연어-요약-생성)
-12. [AI 요약 (Claude)](#12-ai-요약)
+12. [AI 요약 (Gemini)](#12-ai-요약)
 13. [인메모리 캐시](#13-인메모리-캐시)
 14. [Rate Limiting](#14-rate-limiting)
 15. [CORS 보안](#15-cors-보안)
@@ -123,14 +123,49 @@
 
 ## 5. 페이지 콘텐츠 분석
 
+페이지 HTML을 직접 가져와서 로그인 폼, 개인정보 수집 필드, 결제 폼을 감지합니다.
+
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 진입점 | `backend/app/services/threat_detector.py:263-312` | `analyze_page_content()` — httpx GET으로 HTML 가져와서 분석 |
-| 로그인 폼 감지 | `backend/app/services/threat_detector.py:314-325` | `_has_login_form()` — `type="password"` 등 7개 패턴 |
-| 개인정보 필드 감지 | `backend/app/services/threat_detector.py:327-342` | `_detect_personal_info_fields()` — 주민번호, 휴대폰, 주소, 생년월일 |
-| 결제 폼 감지 | `backend/app/services/threat_detector.py:344-362` | `_has_payment_form()` — `<input>` 태그 내 card/카드/cvv 패턴 (12개) |
-| 신뢰 도메인 다운그레이드 | `backend/app/services/threat_detector.py:295,304` | 신뢰 도메인이면 `Severity.INFO`로 변경 (위험도에 영향 없음) |
-| 요구 정보 수준 판정 | `backend/app/services/threat_detector.py:364-391` | `determine_info_requirement()` — LOW/MEDIUM/HIGH |
+| 진입점 | `backend/app/services/threat_detector.py:263-312` | `analyze_page_content()` — httpx GET으로 HTML 취득, 10초 타임아웃 |
+| 신뢰 도메인 스킵 | `threat_detector.py:269-273` | 신뢰 도메인이면 빈 결과 반환 (분석 스킵) |
+| 로그인 폼 감지 | `threat_detector.py:282-288` | `_has_login_form()` 호출 → Flag `"login_form"` (INFO) |
+| 개인정보 필드 감지 | `threat_detector.py:291-298` | `_detect_personal_info_fields()` 호출 → 신뢰 도메인 INFO, 비신뢰 WARNING |
+| 결제 폼 감지 | `threat_detector.py:301-307` | `_has_payment_form()` 호출 → 신뢰 도메인 INFO, 비신뢰 WARNING |
+| 오류 시 무시 | `threat_detector.py:308-310` | 페이지 로드 실패해도 조용히 빈 결과 반환 |
+
+### `_has_login_form()` (라인 314-325)
+`type="password"` 등 7개 패턴 중 하나라도 HTML에 있으면 `True` 반환:
+- `type="password"`, `type='password'`, `input.*password`
+- `name="password"`, `id="password"`, `placeholder="password"`, `placeholder="비밀번호"`
+
+### `_detect_personal_info_fields()` (라인 327-342)
+HTML에서 아래 4종류 민감 필드를 탐지하고, 발견된 항목 리스트를 반환:
+
+| 증거 텍스트 | 탐지 패턴 |
+|----------|---------|
+| 주민등록번호 입력 필드 | `r'주민.*번호'`, `r'ssn'`, `r'social.*security'` |
+| 휴대폰 번호 입력 필드 | `r'휴대폰'`, `r'phone.*number'`, `r'mobile'` |
+| 주소 입력 필드 | `r'우편번호'`, `r'zipcode'`, `r'address'` |
+| 생년월일 입력 필드 | `r'생년월일'`, `r'birth.*date'`, `r'date.*birth'` |
+
+### `_has_payment_form()` (라인 344-362)
+13개 정규식 패턴(re.IGNORECASE)으로 결제 입력 필드 탐지:
+- `<input[^>]*card[^>]*number`, `<input[^>]*카드[^>]*번호`
+- `name=["']?card`, `placeholder=["']?카드`
+- `<input[^>]*cvv`, `<input[^>]*cvc`, `name=["']?cvv`, `name=["']?cvc`
+- `credit\s*card\s*number`, `카드\s*번호\s*입력`, `유효\s*기간\s*입력`
+
+### `determine_info_requirement()` (라인 364-391)
+수집된 플래그/증거를 기반으로 **요구 정보 수준** 결정:
+
+| 레벨 | 조건 |
+|------|------|
+| `LOW` | 플래그/증거 없음, 또는 모두 INFO 레벨 |
+| `MEDIUM` | `login_form`, `login_path`, `typosquatting` 중 하나 이상 |
+| `HIGH` | `payment_form`, `personal_info_request`, `phishing_pattern` 중 하나 이상 |
+
+> INFO 레벨 플래그는 신뢰 도메인에서 발생한 것으로, 위험도 판정에서 제외됩니다.
 
 ---
 
@@ -207,31 +242,107 @@
 
 ---
 
-## 11. 자연어 요약 생성
+## 11. 자연어 요약 생성 (템플릿 기반)
+
+AI 요약의 **fallback** 역할. AI 요약이 없거나 실패 시 표시됩니다.
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 진입점 | `backend/app/services/summary_generator.py:6-27` | `generate_summary()` — verdict + details + guide 합침 |
-| 1단계: 판정문 | `backend/app/services/summary_generator.py:30-40` | `_build_verdict()` — GREEN/YELLOW/RED별 문장 |
-| 도메인 이름 표시 | `backend/app/services/summary_generator.py:133-137` | `_friendly_domain()` — `google.com` → `Google` |
-| 2단계: 위협 상세 | `backend/app/services/summary_generator.py:43-101` | `_build_details()` — 플래그 조합별 문장 |
-| 브랜드 추출 | `backend/app/services/summary_generator.py:122-130` | `_extract_brand()` — 플래그 message에서 `'brand'` 파싱 |
-| 조합 패턴 | `backend/app/services/summary_generator.py:68-81` | shortened+cross_domain / new_domain+low_trust_issuer |
-| 3단계: 행동 가이드 | `backend/app/services/summary_generator.py:104-119` | `_build_guide()` — RED 시 "절대 로그인하지 마세요" 등 |
+| 진입점 | `backend/app/services/summary_generator.py:6-27` | `generate_summary()` — verdict + details + guide 순서로 합침 |
+| 1단계: 판정문 | `summary_generator.py:30-40` | `_build_verdict()` — GREEN/YELLOW/RED별 기본 문장 |
+| 2단계: 위협 상세 | `summary_generator.py:43-101` | `_build_details()` — 탐지된 플래그 조합에 따라 구체적 문장 추가 |
+| 3단계: 행동 가이드 | `summary_generator.py:104-119` | `_build_guide()` — 위험도/플래그 유형에 따른 행동 지침 1문장 |
+| 브랜드 추출 | `summary_generator.py:122-130` | `_extract_brand()` — 타이포스쿼팅 플래그 메시지에서 브랜드명 파싱 |
+| 도메인 표시 | `summary_generator.py:133-137` | `_friendly_domain()` — `google.com` → `Google` |
+| 호출 시점 | `backend/app/routers/scan.py:191-199` | AI 요약 생성 **이전** 단계에서 호출 |
+
+### `_build_details()` 플래그 우선순위 (라인 43-101)
+
+플래그를 아래 순서로 확인하고 해당하는 첫 번째 문장을 추가합니다:
+
+| 우선순위 | 플래그 | 생성 문장 |
+|--------|--------|---------|
+| 1 | `typosquatting` | `"'{브랜드}'을(를) 사칭하는 것으로 의심됩니다."` |
+| 2 | `phishing_pattern` | `"피싱 공격에 사용되는 URL 패턴이 포함되어 있습니다."` |
+| 3 | `safe_browsing_threat` | `"보안 데이터베이스에 위험 사이트로 등록되어 있습니다."` |
+| 4 | `expired_cert` | `"SSL 인증서가 만료된 상태입니다."` |
+| 5 | `shortened_url` + `cross_domain_redirect` | `"단축 URL 뒤에 여러 사이트를 거쳐 연결됩니다."` |
+| 5 | `shortened_url`만 | `"단축 URL로 실제 목적지가 숨겨져 있습니다."` |
+| 5 | `cross_domain_redirect`만 | `"여러 도메인을 거쳐 리다이렉트됩니다."` |
+| 6 | `new_domain` + `low_trust_issuer` | `"최근 만들어진 사이트이며 무료 인증서를 사용합니다."` |
+| 7 | `suspicious_tld` | `"의심스러운 도메인 확장자를 사용합니다."` |
+| 8 | `ip_address` | `"도메인 대신 IP 주소를 사용합니다."` |
+| 9 | `personal_info_request` | `"개인정보 입력을 요구하는 페이지입니다."` |
+| 9 | `payment_form` | `"결제 정보 입력을 요구하는 페이지입니다."` |
+
+### `_build_guide()` 행동 가이드 (라인 104-119)
+
+| 조건 | 출력 문장 |
+|------|---------|
+| GREEN | `"정상적으로 이용 가능합니다."` |
+| YELLOW | `"개인정보 입력 시 주의하세요."` |
+| RED + `typosquatting` 또는 `phishing_pattern` | `"절대 로그인하거나 개인정보를 입력하지 마세요."` |
+| RED + `safe_browsing_threat` 또는 unsafe | `"이 사이트에 접속하지 않는 것을 권장합니다."` |
+| RED 기본 | `"이 사이트에 접속하지 않는 것을 권장합니다."` |
+
+> **주의**: 이 `_build_guide()`는 1문장짜리 템플릿 요약의 일부입니다. AI 행동 수칙(`action_guidelines`)은 별도로 Gemini가 생성합니다. (→ 섹션 12 참고)
 
 ---
 
-## 12. AI 요약 (Claude)
+## 12. AI 요약 (Gemini)
 
-템플릿 요약 이후 Claude API를 통해 자연어 AI 요약을 생성하는 서비스.
+Gemini API를 통해 **AI 분석 요약**과 **행동 수칙**을 생성하는 서비스.
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
-| 서비스 모듈 | `backend/app/services/ai_summarizer.py` | anthropic SDK 사용 |
-| 모델 | `ai_summarizer.py` | `claude-sonnet-4-5-20250929` |
-| 요약 생성 | `ai_summarizer.py` → `generate_ai_summary()` | `{ai_summary: str, action_guidelines: list[str]}` 반환 |
-| Fallback | `ai_summarizer.py` | API 키 미설정 또는 호출 실패 시 템플릿 기반 요약으로 대체 |
-| 호출 시점 | `backend/app/routers/scan.py` | 템플릿 요약(`generate_summary()`) 이후에 호출 |
+| 서비스 모듈 | `backend/app/services/ai_summarizer.py:8-93` | `google-genai` SDK 사용 (`google.genai.Client`) |
+| 사용 모델 | `ai_summarizer.py:63-66` | `gemini-2.5-flash` |
+| 함수 시그니처 | `ai_summarizer.py:8-14` | `generate_ai_summary(risk_score, risk_breakdown, risk_factors, url, domain)` |
+| 반환값 | `ai_summarizer.py` | `{"ai_summary": str\|None, "action_guidelines": list[str]\|None}` |
+| API 키 검증 | `ai_summarizer.py:23-26` | `GEMINI_API_KEY` 없으면 `None` 즉시 반환 |
+| 프롬프트 구성 | `ai_summarizer.py:33-61` | URL + 도메인 + 위험도 세부항목 + 위험 요소 → 한국어 2-3문장 요약 + 2-4개 행동 수칙 요청 |
+| 응답 파싱 | `ai_summarizer.py:67-86` | 마크다운 코드 블록 제거 → JSON 파싱 → 형식 검증 |
+| Fallback | `ai_summarizer.py:88-93` | 호출 실패 시 None 반환 → 프론트엔드에서 템플릿 요약 표시 |
+| 호출 시점 | `backend/app/routers/scan.py:244-252` | 템플릿 요약 생성 **이후** 비동기 호출 |
+
+### 프롬프트 구조 (라인 43-61)
+
+```
+[분석 대상]
+URL: {url}
+도메인: {domain}
+위험도 세부 항목:
+  - ssl: 0.0점 — ...
+  - domain_age: 2.0점 — ...
+위험 요소:
+  - [danger] 타이포스쿼팅 의심 ...
+
+[요청]
+일반인이 이해할 수 있는 2-3문장 한국어 요약 + 2-4개 행동 수칙을 JSON으로 반환:
+{"ai_summary": "...", "action_guidelines": ["...", "..."]}
+```
+
+### 행동 수칙 (`action_guidelines`) 생성 흐름
+
+```
+[scan.py:244-252] generate_ai_summary() 호출
+    ↓
+[ai_summarizer.py:63-66] Gemini 2.5 Flash API 호출
+    ↓
+[ai_summarizer.py:67-86] JSON 파싱 → {"ai_summary": ..., "action_guidelines": [...]}
+    ↓
+[scan.py:254-274] ScanResponse.data.action_guidelines 에 포함
+    ↓
+[Result.tsx:202-222] 번호 매긴 리스트로 렌더링
+```
+
+### 프론트엔드 렌더링 (Result.tsx)
+
+| 요소 | 코드 위치 | 동작 |
+|------|-----------|------|
+| 분석 요약 | `Result.tsx:172-197` | `ai_summary ?? summary` — AI 우선, 없으면 템플릿 |
+| AI 배지 | `Result.tsx:182-188` | `ai_summary`가 있을 때만 "AI" 뱃지 표시 |
+| 행동 수칙 | `Result.tsx:202-222` | `action_guidelines` 배열을 번호 목록으로 렌더링 (AI에서만 생성) |
 
 ---
 
@@ -503,7 +614,7 @@
 | Settings 클래스 | `backend/app/core/config.py:5-102` | pydantic_settings 기반 |
 | 환경 판별 | `config.py:6` | `ENVIRONMENT: str = "development"` |
 | Safe Browsing 키 | `config.py:7` | `GOOGLE_SAFE_BROWSING_API_KEY: str = ""` |
-| Claude API 키 | `config.py` | `CLAUDE_API_KEY: str = ""` |
+| Gemini API 키 | `config.py` | `GEMINI_API_KEY: str = ""` |
 | CORS origins | `config.py:8-14` | localhost + railway.app |
 | 리다이렉트 제한 | `config.py:17` | `MAX_REDIRECTS: int = 10` |
 | 요청 타임아웃 | `config.py:18` | `REQUEST_TIMEOUT: float = 10.0` |
