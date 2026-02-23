@@ -68,7 +68,7 @@ VITE_API_URL=http://localhost:8000
 
 ```
 GOOGLE_SAFE_BROWSING_API_KEY=AIzaSy...키입력...
-CLAUDE_API_KEY=sk-ant-...키입력...
+GEMINI_API_KEY=sk-ant-...키입력...
 ```
 
 파일 위치: `qr/backend/.env` (이 파일은 git에 올라가지 않음 — `.gitignore` 보호)
@@ -82,7 +82,7 @@ Railway 대시보드 → 백엔드 서비스 → **Variables** 탭:
 | Variable 이름 | 값 |
 |--------------|---|
 | `GOOGLE_SAFE_BROWSING_API_KEY` | API 키 붙여넣기 |
-| `CLAUDE_API_KEY` | API 키 붙여넣기 |
+| `GEMINI_API_KEY` | API 키 붙여넣기 |
 | `ENVIRONMENT` | `production` |
 
 Variables 저장 시 Railway가 **자동 재배포**합니다. `.env` 파일은 Railway에 업로드하는 게 아님.
@@ -92,7 +92,7 @@ Variables 저장 시 Railway가 **자동 재배포**합니다. `.env` 파일은 
 | 키 | 설정됨 | 미설정 |
 |----|-------|-------|
 | `GOOGLE_SAFE_BROWSING_API_KEY` | Google 위협 DB 실시간 조회 | 검사 스킵 (항상 안전 처리) |
-| `CLAUDE_API_KEY` | AI 한국어 요약 + 행동 수칙 생성 | 템플릿 요약만 표시 |
+| `GEMINI_API_KEY` | Gemini AI 한국어 요약 + 행동 수칙 생성 | 템플릿 요약만 표시 |
 
 ### API 키 발급
 
@@ -101,9 +101,9 @@ Variables 저장 시 Railway가 **자동 재배포**합니다. `.env` 파일은 
 2. "API 및 서비스" → "라이브러리" → Safe Browsing API 검색 → 사용 설정
 3. "사용자 인증 정보" → "API 키" 생성
 
-**Claude (Anthropic)**
-1. [console.anthropic.com](https://console.anthropic.com/) 접속
-2. "API Keys" → "Create Key"
+**Google Gemini**
+1. [Google AI Studio](https://aistudio.google.com/app/apikey) 접속
+2. "Create API key" 클릭
 
 ---
 
@@ -188,7 +188,7 @@ Railway 대시보드 → 백엔드 서비스 → **Logs** 탭에서 실시간 �
 |------|-------|------|
 | `ENVIRONMENT` | `development` | `production` 설정 시 API 문서 비활성화 + INFO 로그 |
 | `GOOGLE_SAFE_BROWSING_API_KEY` | `""` | Google 위협 DB 키 (없으면 스킵) |
-| `CLAUDE_API_KEY` | `""` | Anthropic Claude AI 키 (없으면 AI 요약 비활성) |
+| `GEMINI_API_KEY` | `""` | Google Gemini AI 키 (없으면 AI 요약 비활성) |
 | `BACKEND_CORS_ORIGINS` | localhost 목록 | 프론트엔드 허용 도메인 (JSON 배열) |
 
 ---
@@ -197,7 +197,7 @@ Railway 대시보드 → 백엔드 서비스 → **Logs** 탭에서 실시간 �
 
 | 증상 | 원인 | 해결 |
 |------|------|------|
-| AI 요약 없음 | `CLAUDE_API_KEY` 미설정 | `backend/.env` 또는 Railway Variables에 키 추가 |
+| AI 요약 없음 | `GEMINI_API_KEY` 미설정 | `backend/.env` 또는 Railway Variables에 키 추가 |
 | Safe Browsing 항상 안전 | `GOOGLE_SAFE_BROWSING_API_KEY` 미설정 | 키 추가 |
 | CORS 오류 | 프론트 도메인이 허용 목록에 없음 | `BACKEND_CORS_ORIGINS`에 도메인 추가 |
 | 미리보기 실패 | Microlink API 일일 50회 한도 초과 | 다음 날 자동 리셋 / 재시도 버튼 |

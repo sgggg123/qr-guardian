@@ -1,6 +1,6 @@
 # QR Guardian — 설정 가이드 & 트러블슈팅
 
-> 마지막 업데이트: 2026-02-21 (Gemini 2.5-flash 적용, 로딩 UI 개선, 요약 카드 통합)
+> 마지막 업데이트: 2026-02-23 (PWA 아이콘 수정, Railway BACKEND_CORS_ORIGINS JSON 오류 수정)
 
 ---
 
@@ -78,9 +78,10 @@ Railway → 백엔드 서비스 → Variables 탭에서 아래 항목 설정:
 | `ENVIRONMENT` | `production` | 권장 |
 | `GOOGLE_SAFE_BROWSING_API_KEY` | 발급받은 키 | 권장 |
 | `GEMINI_API_KEY` | 발급받은 키 | 선택 |
-| `BACKEND_CORS_ORIGINS` | 프론트엔드 URL 배열 | 필요 시 |
 
 > Railway는 `.env` 파일을 읽지 않습니다. 반드시 Railway 대시보드 Variables에 직접 입력해야 합니다.
+
+> ⚠️ **`BACKEND_CORS_ORIGINS`는 Railway Variables에 설정하지 마세요.** 코드 기본값에 Railway 허용 도메인이 이미 포함되어 있습니다. 잘못된 JSON 형식으로 입력하면 백엔드가 시작 자체를 못 하고 크래시됩니다.
 
 ---
 
@@ -110,6 +111,44 @@ npm run dev
 ---
 
 ## 5. 트러블슈팅
+
+### ❌ PWA 아이콘이 브라우저에서 로드 실패 (Download error or resource isn't a valid image)
+
+**원인**: `frontend/public/icons/` 의 PNG 파일이 실제 이미지가 아닌 텍스트 파일로 저장됨
+
+**확인**:
+```bash
+file frontend/public/icons/icon-192x192.png
+# "ASCII text" → 깨진 파일 / "PNG image data" → 정상
+```
+
+**해결**:
+```bash
+sudo apt install python3-pil
+python3 make_icons.py   # 프로젝트 루트에 make_icons.py 있음
+cd frontend && npm run build
+git add frontend/public/icons/ && git commit -m "fix: PWA 아이콘 PNG 바이너리 재생성" && git push
+```
+
+---
+
+### ❌ Railway 백엔드 크래시 — `SettingsError: error parsing value for field "BACKEND_CORS_ORIGINS"`
+
+**원인**: Railway Variables에 설정된 `BACKEND_CORS_ORIGINS` 값이 유효하지 않은 JSON 형식
+
+**증상**: Railway Deploy Logs에 `json.decoder.JSONDecodeError` 또는 `SettingsError` 출력, 백엔드 "Application failed to respond"
+
+**해결**: Railway 대시보드 → 백엔드 서비스 → Variables → `BACKEND_CORS_ORIGINS` 항목 **삭제**
+
+코드 기본값(`config.py`)에 `*.up.railway.app` 와일드카드가 이미 포함되어 있으므로 별도 설정 불필요.
+
+> 꼭 설정해야 한다면 반드시 유효한 JSON 배열 형식으로 입력:
+> ```
+> ["https://qr-gudianfrontend-production.up.railway.app"]
+> ```
+> `]` 누락, 따옴표 오류 등에 주의.
+
+---
 
 ### ❌ "Failed to fetch" — 프론트엔드에서 백엔드 연결 실패
 

@@ -90,7 +90,7 @@ qr/
 | 변수 | 필수 | 설명 |
 |------|------|------|
 | `GOOGLE_SAFE_BROWSING_API_KEY` | 선택 | Google Safe Browsing API 키. 미설정시 위협 검사 스킵 |
-| `CLAUDE_API_KEY` | 선택 | Anthropic Claude API 키. 미설정시 AI 요약 비활성 |
+| `GEMINI_API_KEY` | 선택 | Google Gemini API 키. 미설정시 AI 요약 비활성 |
 | `ENVIRONMENT` | 선택 | `development` 또는 `production` (기본: development) |
 | `VITE_API_URL` | 선택 | Backend URL (Frontend용). 미설정시 Railway 프로덕션 URL |
 
@@ -110,11 +110,12 @@ qr/
 
 ## 상세 문서
 
-- [시스템 아키텍처](docs/SYSTEM_ARCHITECTURE.md)
-- [코드 워크스루](docs/CODE_WALKTHROUGH.md)
+- [시스템 아키텍처](docs/ARCHITECTURE.md)
+- [빠른 참조](docs/QUICKSTART.md)
 - [기능별 코드 맵](docs/FEATURE_CODE_MAP.md)
-- [변경 이력](CHANGELOG_IMPROVEMENT.md)
-- [실행/배포 가이드](docs/DEPLOYMENT_GUIDE.md)
+- [운영 가이드](docs/OPERATIONS.md)
+- [설정 & 트러블슈팅](docs/SETUP_AND_TROUBLESHOOTING.md)
+- [변경 이력](docs/CHANGELOG.md)
 
 ## 라이선스
 
