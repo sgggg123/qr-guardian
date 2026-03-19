@@ -148,9 +148,9 @@ export default function History() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.bg} ${config.text}`}>
                         {config.label}
                       </span>
-                      {item.trustScore !== null && (
+                      {item.riskScore !== null && (
                         <span className="text-xs text-gray-500 dark:text-slate-500">
-                          신뢰도 {item.trustScore}점
+                          위험도 {item.riskScore}점
                         </span>
                       )}
                       {hasDetail && (

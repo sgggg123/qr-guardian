@@ -5,7 +5,7 @@ export interface ScanHistoryItem {
   url: string
   finalUrl: string
   riskLevel: RiskLevel
-  trustScore: number | null
+  riskScore: number | null
   scannedAt: string
   scanData?: ScanData
 }
@@ -47,7 +47,7 @@ export function addScanToHistory(scanData: ScanData): ScanHistoryItem {
     url: scanData.original_url,
     finalUrl: scanData.final_url,
     riskLevel: scanData.risk_level,
-    trustScore: scanData.domain_analysis?.trust_score ?? null,
+    riskScore: scanData.risk_score ?? null,
     scannedAt: new Date().toISOString(),
     scanData,
   }
