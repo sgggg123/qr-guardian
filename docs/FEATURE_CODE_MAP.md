@@ -22,8 +22,7 @@
 13. [인메모리 캐시](#13-인메모리-캐시)
 14. [Rate Limiting](#14-rate-limiting)
 15. [CORS 보안](#15-cors-보안)
-16. [벌크 스캔](#16-벌크-스캔)
-17. [URL 신고](#17-url-신고)
+16. [URL 신고](#16-url-신고)
 18. [QR 코드 스캔 (카메라/이미지)](#18-qr-코드-스캔)
 19. [QR 이미지 붙여넣기 (Ctrl+V)](#19-qr-이미지-붙여넣기)
 20. [QR 코드 생성](#20-qr-코드-생성)
@@ -366,7 +365,6 @@ URL: {url}
 | 앱 상태 등록 | `backend/app/main.py:29` | `app.state.limiter = limiter` |
 | 429 핸들러 | `backend/app/main.py:32-42` | `rate_limit_handler()` — 한글 에러 메시지 반환 |
 | 스캔 30회/분 | `backend/app/routers/scan.py:54` | `@limiter.limit("30/minute")` |
-| 벌크 5회/분 | `backend/app/routers/bulk.py:22` | `@limiter.limit("5/minute")` |
 | 신고 10회/분 | `backend/app/routers/report.py:20` | `@limiter.limit("10/minute")` |
 
 ---
@@ -382,22 +380,7 @@ URL: {url}
 
 ---
 
-## 16. 벌크 스캔
-
-| 기능 | 코드 위치 | 핵심 로직 |
-|------|-----------|-----------|
-| API 엔드포인트 | `backend/app/routers/bulk.py:21-23` | `POST /api/bulk-scan` — 5회/분 제한 |
-| URL 제한 | `backend/app/routers/bulk.py:18,25` | `MAX_BULK_URLS = 20`, `urls[:20]`으로 잘림 |
-| 병렬 실행 | `backend/app/routers/bulk.py:39` | `asyncio.gather(*[_scan_one(u) for u in urls])` |
-| 개별 에러 격리 | `backend/app/routers/bulk.py:36-37` | 하나가 실패해도 나머지는 정상 반환 |
-| 단일 스캔 재사용 | `backend/app/routers/bulk.py:10,30` | `scan_url as single_scan` import 후 직접 호출 |
-| 프론트 페이지 | `frontend/src/pages/BulkScan.tsx` | textarea 입력 → 줄바꿈 분리 → API 호출 |
-| API 함수 | `frontend/src/services/api.ts` → `bulkScanUrls()` | `POST /api/bulk-scan` fetch |
-| 라우트 등록 | `frontend/src/App.tsx` | `<Route path="/bulk" element={<BulkScan />} />` |
-
----
-
-## 17. URL 신고
+## 16. URL 신고
 
 | 기능 | 코드 위치 | 핵심 로직 |
 |------|-----------|-----------|
@@ -562,7 +545,6 @@ URL: {url}
 | 로깅 초기화 | `backend/app/core/logging.py:27-40` | `setup_logging()` — 네임스페이스 `qr_guardian`, 노이즈 억제 |
 | 로거 생성 | `backend/app/core/logging.py:43-45` | `get_logger(name)` → `qr_guardian.{name}` |
 | 스캔 로그 | `backend/app/routers/scan.py:228-232` | URL + risk_level + duration_ms |
-| 벌크 로그 | `backend/app/routers/bulk.py:41` | url_count |
 | 신고 로그 | `backend/app/routers/report.py:38` | URL |
 | Rate Limit 로그 | `backend/app/main.py:34` | client_ip |
 
@@ -588,9 +570,6 @@ URL: {url}
 | `ScanData` | `schemas.py:71-80` | 스캔 결과 전체 데이터 |
 | `ScanResponse` | `schemas.py:83-85` | API 응답 래퍼 `{ status, data }` |
 | `ErrorResponse` | `schemas.py:88-91` | 에러 응답 |
-| `BulkScanRequest` | `schemas.py:96-97` | 벌크 요청 `{ urls }` |
-| `BulkScanItem` | `schemas.py:100-104` | 벌크 결과 한 건 |
-| `BulkScanResponse` | `schemas.py:107-109` | 벌크 응답 |
 | `ReportRequest` | `schemas.py:114-116` | 신고 요청 `{ url, reason }` |
 | `ReportResponse` | `schemas.py:119-121` | 신고 응답 |
 
@@ -681,7 +660,6 @@ URL: {url}
 | 메서드 | 경로 | Rate Limit | 코드 위치 | 설명 |
 |--------|------|------------|-----------|------|
 | `POST` | `/api/scan` | 30/분 | `scan.py:49-55` | URL 보안 스캔 |
-| `POST` | `/api/bulk-scan` | 5/분 | `bulk.py:21-23` | 벌크 URL 스캔 (최대 20개) |
 | `POST` | `/api/report` | 10/분 | `report.py:19-21` | URL 신고 |
 | `GET` | `/api/reports/stats` | 없음 | `report.py:46-47` | 신고 통계 |
 | `GET` | `/health` | 없음 | `main.py:72-75` | 헬스체크 |
@@ -700,4 +678,3 @@ URL: {url}
 | `/history` | `History.tsx` | `frontend/src/pages/History.tsx` | 스캔 기록 + 통계 |
 | `/settings` | `Settings.tsx` | `frontend/src/pages/Settings.tsx` | 테마/알림 설정 |
 | `/generate` | `Generate.tsx` | `frontend/src/pages/Generate.tsx` | QR 코드 생성 |
-| `/bulk` | `BulkScan.tsx` | `frontend/src/pages/BulkScan.tsx` | 벌크 URL 검사 |

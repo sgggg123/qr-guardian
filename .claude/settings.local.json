@@ -24,7 +24,23 @@
       "WebFetch(domain:railway.com)",
       "Bash(git merge:*)",
       "Bash(gh api:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr log --oneline -10)",
+      "Bash(chmod:*)",
+      "Bash(/mnt/d/project/PythonProject/qr/update.sh)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr remote:*)",
+      "Bash(uvicorn app.main:app:*)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr status)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr log --oneline -3)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr diff --cached --stat)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr push origin main)",
+      "Bash(git -C /mnt/d/project/PythonProject/qr show --stat HEAD)",
+      "Bash(npm run lint)",
+      "Bash(npx tsc:*)",
+      "Bash(docker-compose:*)",
+      "Bash(railway status:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:www.data.go.kr)"
     ]
   }
 }

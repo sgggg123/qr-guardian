@@ -129,7 +129,6 @@
 │    ├─ summary_generator 자연어 요약 생성              │
 │    └─ ai_summarizer     Claude AI 한국어 요약     │
 │                                                     │
-│  bulk.py   (벌크 스캔 - 최대 20개 URL 병렬 검사)       │
 │  report.py (URL 신고 접수 + 통계)                     │
 │                                                     │
 │  Rate Limiting: slowapi (IP당 요청 제한)              │
@@ -161,7 +160,6 @@ qr/
 │   │   │   └── logging.py       # 구조화된 JSON 로깅 설정
 │   │   ├── routers/
 │   │   │   ├── scan.py          # POST /api/scan (파이프라인 오케스트레이터 + 캐시)
-│   │   │   ├── bulk.py          # POST /api/bulk-scan (벌크 스캔)
 │   │   │   └── report.py        # POST /api/report + GET /api/reports/stats
 │   │   ├── services/
 │   │   │   ├── url_analyzer.py      # 단축URL 판별, 리다이렉트 체인 추적
@@ -171,7 +169,6 @@ qr/
 │   │   │   ├── ai_summarizer.py       # Claude API 기반 AI 요약
 │   │   │   └── summary_generator.py # 자연어 요약 생성 (템플릿 기반)
 │   │   └── models/
-│   │       └── schemas.py       # Pydantic 모델 (ScanRequest, ScanData, BulkScan 등)
 │   ├── tests/
 │   │   ├── test_summary_generator.py  # 요약 생성기 regression 테스트 (11건)
 │   │   ├── test_scan_api.py           # API 통합 테스트 (12건)
@@ -182,7 +179,7 @@ qr/
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx              # 라우팅 설정 (/, /result, /history, /settings, /generate, /bulk)
+│   │   ├── App.tsx              # 라우팅 설정 (/, /result, /history, /settings, /generate,)
 │   │   ├── main.tsx             # React 렌더링 시작점
 │   │   ├── index.css            # 전역 스타일 (TailwindCSS)
 │   │   ├── components/
@@ -196,9 +193,8 @@ qr/
 │   │   │   ├── History.tsx      # 스캔 기록 + 통계 (클릭 시 상세 재열람)
 │   │   │   ├── Settings.tsx     # 테마, 효과음, 진동 설정
 │   │   │   ├── Generate.tsx     # QR 코드 생성기
-│   │   │   └── BulkScan.tsx     # 벌크 URL 검사 (최대 20개)
 │   │   ├── services/
-│   │   │   ├── api.ts           # Backend API (scanUrl, bulkScanUrls, reportUrl, healthCheck)
+│   │   │   ├── api.ts           # Backend API (scanUrl, reportUrl, healthCheck)
 │   │   │   ├── scanHistory.ts   # localStorage 히스토리 (최근 20건 ScanData 포함)
 │   │   │   ├── notifications.ts # Web Audio API 효과음 + 진동
 │   │   │   └── share.ts        # 결과 공유 (Web Share API + 클립보드)
@@ -226,7 +222,7 @@ qr/
 - CORS 미들웨어 등록 (config 기반 origin 제한 + regex)
 - slowapi Rate Limiting (429 핸들러 포함)
 - 구조화된 JSON 로깅 초기화
-- `scan.router`, `bulk.router`, `report.router` 등록
+- `scan.router`, `report.router` 등록
 - `GET /health` 헬스체크 엔드포인트
 
 ### 5.2 `core/config.py` — 설정
@@ -364,7 +360,6 @@ Claude API(anthropic SDK)를 사용하여 분석 결과를 한국어로 요약�
 | `/history` | `History.tsx` | 스캔 기록 + 통계 (클릭 시 상세 재열람) |
 | `/settings` | `Settings.tsx` | 테마, 효과음, 진동 설정 |
 | `/generate` | `Generate.tsx` | QR 코드 생성기 |
-| `/bulk` | `BulkScan.tsx` | 벌크 URL 일괄 검사 (최대 20개) |
 
 하단 네비게이션 바에 스캔, 생성, 기록, 설정 4개 탭이 항상 표시됩니다.
 
@@ -443,7 +438,6 @@ Claude API(anthropic SDK)를 사용하여 분석 결과를 한국어로 요약�
 #### `api.ts`
 ```typescript
 scanUrl(url: string): Promise<ScanResponse>          // POST /api/scan
-bulkScanUrls(urls: string[]): Promise<BulkScanResponse>  // POST /api/bulk-scan
 reportUrl(url: string, reason?: string, riskScore?: number, aiSummary?: string): Promise<...>  // POST /api/report
 getScreenshotUrl(url: string): string                     // Microlink 스크린샷 URL
 healthCheck(): Promise<boolean>                            // GET /health
@@ -628,7 +622,6 @@ URL을 분석합니다.
 { "status": "healthy", "service": "qr-guardian-api" }
 ```
 
-### `POST /api/bulk-scan`
 
 여러 URL을 한꺼번에 분석합니다 (최대 20개). Rate limit: 5회/분.
 

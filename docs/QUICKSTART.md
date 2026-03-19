@@ -80,8 +80,6 @@ curl -s -X POST http://localhost:8000/api/scan \
   -H "Content-Type: application/json" \
   -d '{"url":"https://navar.com"}' | python3 -m json.tool
 
-# 벌크 스캔
-curl -s -X POST http://localhost:8000/api/bulk-scan \
   -H "Content-Type: application/json" \
   -d '{"urls":["https://google.com","https://navar.com"]}' | python3 -m json.tool
 
@@ -143,7 +141,6 @@ Result.tsx
 | `/history` | History | 스캔 기록 + 통계 (클릭 시 상세 재열람) |
 | `/settings` | Settings | 테마, 효과음, 진동 |
 | `/generate` | Generate | QR 코드 생성 |
-| `/bulk` | BulkScan | 벌크 URL 검사 (최대 20개) |
 | `/help` | Help | 사용 가이드 + 탐지 체험 3종 데모 |
 
 ---
@@ -181,7 +178,6 @@ risk_score = ssl(0~3) + domain_age(0~4) + whois_failure(0~1)
 | 엔드포인트 | 제한 |
 |------------|------|
 | `POST /api/scan` | 30회/분 (IP당) |
-| `POST /api/bulk-scan` | 5회/분 (IP당) |
 | `POST /api/report` | 10회/분 (IP당) |
 
 ---

@@ -6,7 +6,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.rate_limiter import limiter
-from app.routers import scan, report, bulk
+from app.routers import scan, report
 
 is_production = settings.ENVIRONMENT == "production"
 
@@ -62,7 +62,6 @@ app.add_middleware(
 # Include routers
 app.include_router(scan.router)
 app.include_router(report.router)
-app.include_router(bulk.router)
 
 
 @app.get("/health")
