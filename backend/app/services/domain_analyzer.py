@@ -57,6 +57,9 @@ class DomainAnalyzer:
         domain = parsed.netloc.lower()
         if domain.startswith("www."):
             domain = domain[4:]
+        # Strip port number if present (e.g. 125.42.232.134:43575 → 125.42.232.134)
+        if ":" in domain:
+            domain = domain.split(":")[0]
 
         is_trusted = self._is_trusted_domain(domain)
 

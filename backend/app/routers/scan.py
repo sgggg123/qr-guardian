@@ -1,3 +1,4 @@
+import asyncio
 import time
 from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Request
@@ -14,6 +15,7 @@ from app.core.config import settings
 from app.services.url_analyzer import url_analyzer
 from app.services.threat_detector import threat_detector
 from app.services.safe_browsing import safe_browsing_service
+from app.services.urlhaus import urlhaus_service
 from app.services.domain_analyzer import domain_analyzer
 from app.services.summary_generator import generate_summary
 from app.services.ai_summarizer import generate_ai_summary
@@ -125,8 +127,11 @@ async def scan_url(scan_request: ScanRequest, request: Request):
         content_flags, evidence = await threat_detector.analyze_page_content(final_url)
         all_flags.extend(content_flags)
 
-        # Check Safe Browsing
-        is_safe, threats = await safe_browsing_service.check_url(final_url)
+        # Check Safe Browsing + URLhaus in parallel
+        (is_safe, threats), (is_urlhaus_malware, urlhaus_tags) = await asyncio.gather(
+            safe_browsing_service.check_url(final_url),
+            urlhaus_service.check_url(final_url),
+        )
 
         if not is_safe:
             for threat in threats:
@@ -135,6 +140,14 @@ async def scan_url(scan_request: ScanRequest, request: Request):
                     severity=Severity.DANGER,
                     message=f"보안 위협 감지: {threat}"
                 ))
+
+        if is_urlhaus_malware:
+            tag_str = f" ({', '.join(urlhaus_tags[:3])})" if urlhaus_tags else ""
+            all_flags.append(Flag(
+                type="urlhaus_threat",
+                severity=Severity.DANGER,
+                message=f"알려진 악성 URL 데이터베이스에 등록된 위협입니다{tag_str}"
+            ))
 
         # Domain analysis (SSL, domain age, risk score)
         domain_result = await domain_analyzer.analyze_domain(final_url)
@@ -146,6 +159,18 @@ async def scan_url(scan_request: ScanRequest, request: Request):
             "factor": "safe_browsing",
             "score": sb_risk,
             "reason": sb_reason,
+        })
+
+        # Incorporate URLhaus into risk_breakdown
+        urlhaus_risk = 2.0 if is_urlhaus_malware else 0.0
+        urlhaus_reason = (
+            f"URLhaus 악성 URL DB에 등록됨 ({', '.join(urlhaus_tags[:3])})" if is_urlhaus_malware
+            else "URLhaus DB에서 위협 없음"
+        )
+        domain_result["risk_breakdown"].append({
+            "factor": "urlhaus",
+            "score": urlhaus_risk,
+            "reason": urlhaus_reason,
         })
 
         # Incorporate flag-based risks into risk_breakdown
@@ -325,6 +350,9 @@ def _calculate_flag_risk(flags: list[Flag]) -> tuple[float, str]:
     if "phishing_pattern" in flag_types:
         score = max(score, 3.0)
         reasons.append("피싱 URL 패턴 감지")
+    if "malware_extension" in flag_types:
+        score = max(score, 3.0)
+        reasons.append("악성코드 파일 확장자 감지")
 
     # High-risk flags (2.0)
     if "suspicious_tld" in flag_types:
@@ -333,6 +361,14 @@ def _calculate_flag_risk(flags: list[Flag]) -> tuple[float, str]:
     if "ip_address" in flag_types:
         score = max(score, 2.0)
         reasons.append("IP 주소 직접 사용")
+
+    # Additive flags (compound with existing score)
+    if "suspicious_port" in flag_types:
+        score += 1.5
+        reasons.append("비표준 포트 사용")
+    if "long_subdomain" in flag_types:
+        score += 1.0
+        reasons.append("비정상적인 서브도메인 구조")
 
     # Medium flags (1.0)
     if "login_path" in flag_types and score < 2.0:
@@ -362,7 +398,7 @@ def _calculate_risk_level(
     warning_count = sum(1 for f in flags if f.severity == Severity.WARNING)
 
     # High-risk flags that should immediately trigger RED
-    high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat", "expired_cert"}
+    high_risk_types = {"typosquatting", "phishing_pattern", "safe_browsing_threat", "expired_cert", "urlhaus_threat", "malware_extension"}
     has_high_risk = any(f.type in high_risk_types for f in flags)
 
     # Risk score thresholds (primary)
@@ -384,7 +420,7 @@ def _calculate_risk_level(
     if warning_count >= 3 or trust_score < 60:
         return RiskLevel.YELLOW
     if warning_count >= 1:
-        significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "payment_form", "personal_info_request", "new_domain", "low_trust_issuer"}
+        significant_warnings = {"suspicious_tld", "multiple_redirects", "ip_address", "suspicious_port", "long_subdomain", "payment_form", "personal_info_request", "new_domain", "low_trust_issuer"}
         has_significant = any(f.type in significant_warnings and f.severity == Severity.WARNING for f in flags)
         if has_significant:
             return RiskLevel.YELLOW

@@ -53,6 +53,11 @@ class ThreatDetector:
             r"verify.*identity",
             r"bank.*verification",
             r"card.*suspended",
+            # ClearFake / 악성코드 사회공학 패턴
+            r"verification\.google",
+            r"update.*browser",
+            r"browser.*update",
+            r"install.*update",
             # 한글 패턴 (기본)
             r"본인.*인증",
             r"계정.*확인",
@@ -112,6 +117,30 @@ class ThreatDetector:
         # Skip most checks for trusted domains
         if is_trusted:
             return flags
+
+        # Check for malware file extensions in URL path
+        malware_extensions = ['.exe', '.bat', '.sh', '.ps1', '.elf', '.msi', '.vbs', '.dll', '.hta', '.scr']
+        path_lower = domain_info["path"].lower()
+        for ext in malware_extensions:
+            if path_lower.endswith(ext):
+                flags.append(Flag(
+                    type="malware_extension",
+                    severity=Severity.DANGER,
+                    message=f"악성코드로 의심되는 파일 확장자가 감지되었습니다 ({ext})"
+                ))
+                break
+
+        # Check for suspicious double TLD patterns used by malware (.in.net, .in.ua etc.)
+        suspicious_double_tlds = [".in.net", ".in.ua", ".co.cc", ".com.co"]
+        domain_lower = domain_info["domain"]
+        for double_tld in suspicious_double_tlds:
+            if domain_lower.endswith(double_tld):
+                flags.append(Flag(
+                    type="suspicious_tld",
+                    severity=Severity.WARNING,
+                    message=f"악성코드에 자주 사용되는 도메인 패턴이 감지되었습니다 ({double_tld})"
+                ))
+                break
 
         # Check for suspicious TLD
         if domain_info["tld"] in self.suspicious_tlds:
